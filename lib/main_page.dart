@@ -1,19 +1,352 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:pomodd_kusa/color_style.dart';
 import 'dart:math' as math;
+import 'dart:async';
 
-class MainPage extends StatelessWidget {
+class MainPage extends StatefulWidget {
   const MainPage({super.key});
+
+  @override
+  State<MainPage> createState() => _MainPageState();
+}
+
+class _MainPageState extends State<MainPage>
+    with SingleTickerProviderStateMixin {
+  // 設定値（状態）
+  int workTime = 25;
+  int restTime = 5;
+  int resp = 5;
+
+  // タイマー/アニメーション用の状態
+  late final AnimationController _animationController; // 0.0→1.0で進行
+  double _progress = 0.0; // 円弧の進捗 (0.0〜1.0)
+  bool _isRunning = false; // 再生中かどうか
+  bool _isWorkPhase = true; // true=Work, false=Rest
+  int _currentCycle = 0; // 0始まり、resp回実行
+  Timer? _blinkTimer; // 1秒ごとの点滅用
+  bool _blinkOn = true; // true: 表示, false: 非表示
+  bool _isPaused = false; // 一時停止中かどうか
+
+  // 全体残り割合（全Work+Rest×respを100%として減少）
+  int _computeTotalRemainingPercent() {
+    final int totalSeconds = ((workTime + restTime) * resp) * 60;
+    if (totalSeconds <= 0) return 0;
+
+    // 完了済サイクルの経過秒
+    int elapsedSeconds = _currentCycle * (workTime + restTime) * 60;
+
+    // セッション完了時は100%経過として扱う
+    if (_currentCycle >= resp) {
+      elapsedSeconds = totalSeconds;
+    } else {
+      // 現在サイクルの経過秒
+      if (_isWorkPhase) {
+        elapsedSeconds += (_progress * workTime * 60).round();
+      } else {
+        elapsedSeconds += (workTime * 60) + (_progress * restTime * 60).round();
+      }
+    }
+
+    final double remainingPercent =
+        100.0 * (1.0 - (elapsedSeconds / totalSeconds));
+    return remainingPercent.clamp(0.0, 100.0).round();
+  }
+
+  // 残りサイクル数（Rest完了ごとに1減少）。最小0
+  int get _remainingCycles => (resp - _currentCycle).clamp(0, resp);
+
+  // セッション完了ダイアログ
+  Future<void> _showCompletionDialog() async {
+    if (!mounted) return;
+    await showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: Colors.black,
+          title: Text(
+            'セッション完了',
+            style: GoogleFonts.roboto(color: Colors.white),
+          ),
+          content: Text(
+            'おつかれさまです！全てのサイクルが完了しました。',
+            style: GoogleFonts.roboto(color: Colors.white70),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: const Text('キャンセル'),
+            ),
+            TextButton(
+              onPressed: () {
+                // 完了: 状態を初期化
+                setState(() {
+                  _isRunning = false;
+                  _isPaused = false;
+                  _progress = 0.0;
+                  _currentCycle = 0;
+                  _isWorkPhase = true;
+                });
+                Navigator.of(context).pop();
+              },
+              child: const Text('完了'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // 現在フェーズ（Work/Rest）の合計秒数
+  int get _phaseSeconds => (_isWorkPhase ? workTime : restTime) * 60;
+
+  // Work/Rest/Resp の3列ピッカーを表示
+  Future<void> _showTimeSettingsPicker(Size screenSize) async {
+    // 一時選択値（閉じるまでローカルに保持）
+    int tempWork = workTime;
+    int tempRest = restTime;
+    int tempResp = resp;
+
+    // モーダルが閉じられる（外タップ）まで待機し、閉じた時点で選択値を確定する
+    await showCupertinoModalPopup(
+      context: context,
+      builder: (context) {
+        // 指定件数の 1..N を生成（ピッカー用）
+        List<Widget> _numberItems(int count) =>
+            List.generate(count, (i) => Center(child: Text('${i + 1}')));
+
+        return CupertinoPopupSurface(
+          isSurfacePainted: true,
+          child: Container(
+            color: CupertinoColors.systemBackground.resolveFrom(context),
+            height: screenSize.height * .36,
+            width: screenSize.width,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                SizedBox(height: screenSize.height * .02),
+                // タイトル行
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Text(
+                      'Work',
+                      style: GoogleFonts.roboto(
+                        fontSize: screenSize.height * .025,
+                        color: Colors.black,
+                        decoration: TextDecoration.none,
+                      ),
+                    ),
+                    Text(
+                      'Rest',
+                      style: GoogleFonts.roboto(
+                        fontSize: screenSize.height * .025,
+                        color: Colors.black,
+                        decoration: TextDecoration.none,
+                      ),
+                    ),
+                    Text(
+                      'Resp',
+                      style: GoogleFonts.roboto(
+                        fontSize: screenSize.height * .025,
+                        color: Colors.black,
+                        decoration: TextDecoration.none,
+                      ),
+                    ),
+                  ],
+                ),
+                // 3列のピッカー
+                SizedBox(
+                  height: 220,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: [
+                      Expanded(
+                        child: CupertinoPicker(
+                          itemExtent: 32,
+                          scrollController: FixedExtentScrollController(
+                            initialItem: (workTime - 1).clamp(
+                              0,
+                              59,
+                            ), // 1..60 → 0..59
+                          ),
+                          onSelectedItemChanged: (index) =>
+                              tempWork = index + 1,
+                          children: _numberItems(60), // Work: 1..60
+                        ),
+                      ),
+                      Expanded(
+                        child: CupertinoPicker(
+                          itemExtent: 32,
+                          scrollController: FixedExtentScrollController(
+                            initialItem: (restTime - 1).clamp(
+                              0,
+                              9,
+                            ), // 1..10 → 0..9
+                          ),
+                          onSelectedItemChanged: (index) =>
+                              tempRest = index + 1,
+                          children: _numberItems(10), // Rest: 1..10
+                        ),
+                      ),
+                      Expanded(
+                        child: CupertinoPicker(
+                          itemExtent: 32,
+                          scrollController: FixedExtentScrollController(
+                            initialItem: (resp - 1).clamp(0, 9), // 1..10 → 0..9
+                          ),
+                          onSelectedItemChanged: (index) =>
+                              tempResp = index + 1,
+                          children: _numberItems(10), // Resp: 1..10
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                // Done ボタンは無し。外側タップで閉じる
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    // モーダルが閉じられたので、最新の選択値を反映
+    setState(() {
+      workTime = tempWork.clamp(1, 60);
+      restTime = tempRest.clamp(1, 10);
+      resp = tempResp.clamp(1, 10);
+    });
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _animationController =
+        AnimationController(
+            vsync: this,
+            duration: Duration(seconds: _phaseSeconds),
+          )
+          ..addListener(() {
+            // アニメーションの進行に合わせて円弧の割合を更新
+            setState(() {
+              _progress = _animationController.value;
+            });
+          })
+          ..addStatusListener((status) {
+            // 1フェーズ完了時の遷移（Work→Rest→次のWork...）
+            if (status == AnimationStatus.completed) {
+              _handlePhaseComplete();
+            }
+          });
+
+    // 1秒ごとに点滅状態をトグル（実行中のみ反映）
+    _blinkTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!_isRunning) return;
+      setState(() {
+        _blinkOn = !_blinkOn;
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _blinkTimer?.cancel();
+    _animationController.dispose();
+    super.dispose();
+  }
+
+  // 現在のフェーズ（Work/Rest）の長さでアニメーション開始（時計回りで0→1）
+  void _startCurrentPhase() {
+    _animationController.duration = Duration(seconds: _phaseSeconds);
+    _animationController.reset();
+    // フェーズ開始時に進捗を明示的に0へ（インジケータは満タンから減少）
+    _progress = 0.0;
+    _animationController.forward();
+    setState(() {
+      _isRunning = true;
+      _isPaused = false;
+    });
+  }
+
+  // フェーズ完了時のハンドリング
+  void _handlePhaseComplete() {
+    if (_isWorkPhase) {
+      // Workが終わったらRestへ
+      _isWorkPhase = false;
+      _startCurrentPhase();
+    } else {
+      // Restが終わったら次サイクルへ
+      _currentCycle += 1;
+      if (_currentCycle < resp) {
+        _isWorkPhase = true;
+        _startCurrentPhase();
+      } else {
+        // すべてのサイクル完了
+        setState(() {
+          _isRunning = false;
+          _isPaused = false;
+          _progress = 1.0;
+        });
+        // ダイアログで完了通知
+        _showCompletionDialog();
+      }
+    }
+  }
+
+  // 一時停止
+  void _pause() {
+    _animationController.stop();
+    setState(() {
+      _isRunning = false;
+      _isPaused = true;
+    });
+  }
+
+  // 再開（現在の進捗から継続）
+  void _resume() {
+    _animationController.forward();
+    setState(() {
+      _isRunning = true;
+      _isPaused = false;
+    });
+  }
+
+  // 再生/一時停止ボタン押下時の挙動
+  void _onPressPlay() {
+    if (_isRunning) {
+      // 実行中 → 一時停止
+      _pause();
+      return;
+    }
+
+    if (_isPaused) {
+      // 一時停止中 → 再開
+      _resume();
+      return;
+    }
+
+    // 停止中（未開始/完了） → 最初から開始
+    _currentCycle = 0;
+    _isWorkPhase = true;
+    _progress = 0.0;
+    _startCurrentPhase();
+  }
 
   @override
   Widget build(BuildContext context) {
     final Size screenSize = MediaQuery.of(context).size;
     return Scaffold(
+      backgroundColor: Colors.black,
       appBar: AppBar(
         backgroundColor: Colors.black,
         title: Text(
-          'PomoGrass',
+          'PomodGrass',
           style: GoogleFonts.roboto(
             fontSize: 32,
             color: ColorStyle.textColor,
@@ -28,112 +361,164 @@ class MainPage extends StatelessWidget {
             flex: 1,
             child: Stack(
               children: [
-                Container(
-                  width: screenSize.width,
-                  color: Colors.black,
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      Text(
-                        'Work',
-                        style: GoogleFonts.roboto(
-                          fontSize: screenSize.width * .1,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
+                Positioned(
+                  top: screenSize.width * .01,
+                  left: screenSize.width * .036,
+                  child: Opacity(
+                    // 実行中のみ1秒ごとの点滅（非実行時は常に表示）
+                    opacity: _isRunning ? (_blinkOn ? 1.0 : 0.0) : 1.0,
+                    child: Text(
+                      _isWorkPhase ? 'Work' : 'Rest',
+                      style: GoogleFonts.roboto(
+                        fontSize: screenSize.height * .05,
+                        color: Colors.white,
+                        decoration: TextDecoration.none,
                       ),
-                      _TwoThirdCircularIndicator(
-                        // 画面幅に合わせて半径を可変にする（レスポンシブ）
-                        radius: screenSize.width / 2.6,
-                        // 進捗（0.0〜1.0）
-                        percent: .76,
-                        // 円弧の太さ
-                        lineWidth: 8,
-                        // 配色（既存の ColorStyle を使用）
-                        progressColor: Colors.grey,
-                        backgroundColor: Colors.white,
-                        // 欠ける角度（ここでは 1/3 を欠けさせる = 120度）
-                        gapAngle: 2 * math.pi / 6,
-                        // 開始位置を上方向中心に配置（任意で微調整可能）
-                        rotation: math.pi / 4,
-                        // 中央テキスト
-                        center: Column(
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          spacing: 10,
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              spacing: 20,
-                              children: [
-                                SettingTimeWidget(
-                                  onTap: () {},
-                                  title: 'Work Time',
-                                  settingTime: 25,
-                                  description: ' min',
-                                  screenSize: screenSize,
-                                ),
-                                SettingTimeWidget(
-                                  onTap: () {},
-                                  title: 'Rest Time',
-                                  settingTime: 5,
-                                  description: ' min',
-                                  screenSize: screenSize,
-                                ),
-                              ],
-                            ),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              spacing: 20,
-                              children: [
-                                SettingTimeWidget(
-                                  onTap: () {},
-                                  title: 'Total Rest Time',
-                                  settingTime: 100,
-                                  description: ' min',
-                                  screenSize: screenSize,
-                                ),
-                                SettingTimeWidget(
-                                  onTap: () {},
-                                  title: 'Total Work Time',
-                                  settingTime: 25,
-                                  description: ' min',
-                                  screenSize: screenSize,
-                                ),
-                              ],
-                            ),
-                            SettingTimeWidget(
-                              onTap: () {},
-                              title: 'Total %',
-                              settingTime: 100,
-                              description: ' %',
-                              screenSize: screenSize,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
                 Positioned(
-                  bottom: screenSize.width * .03,
-                  right: screenSize.width * .1,
-                  child: CircleAvatar(
-                    radius: screenSize.width * .12,
-                    backgroundColor: Colors.white,
+                  top: screenSize.width * .16,
+                  right: screenSize.width * .036,
+                  child: SizedBox(
+                    width: screenSize.width,
+                    child: _TwoThirdCircularIndicator(
+                      // 画面幅に合わせて半径を可変にする（レスポンシブ）
+                      radius: screenSize.width / 2.6,
+                      // 進捗（0.0〜1.0）
+                      // 残り割合として減少表示（1.0→0.0で減る）
+                      percent: 1.0 - _progress,
+                      // 円弧の太さ
+                      lineWidth: 8,
+                      // 配色（点滅なしで常に表示）
+                      progressColor: Colors.grey,
+                      backgroundColor: Colors.white,
+                      // 欠ける角度（ここでは 1/3 を欠けさせる = 120度）
+                      gapAngle: 2 * math.pi / 7.8,
+                      // 開始位置を上方向中心に配置（任意で微調整可能）
+                      rotation: -math.pi / 3.4,
+                      // 中央テキスト
+                      center: Column(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        spacing: 8,
+                        children: [
+                          SizedBox(height: screenSize.height * .02),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            spacing: 20,
+                            children: [
+                              SettingTimeWidget(
+                                onTap: () =>
+                                    _showTimeSettingsPicker(screenSize),
+                                title: 'Work Time',
+                                settingTime: workTime,
+                                description: ' min',
+                                screenSize: screenSize,
+                              ),
+                              SettingTimeWidget(
+                                onTap: () =>
+                                    _showTimeSettingsPicker(screenSize),
+                                title: 'Rest Time',
+                                settingTime: restTime,
+                                description: ' min',
+                                screenSize: screenSize,
+                              ),
+                            ],
+                          ),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            spacing: 20,
+                            children: [
+                              SettingTimeWidget(
+                                onTap: () {},
+                                title: 'Total Work Time',
+                                settingTime: workTime * resp,
+                                description: ' min',
+                                screenSize: screenSize,
+                              ),
+                              SettingTimeWidget(
+                                onTap: () {},
+                                title: 'Total Rest Time',
+                                settingTime: restTime * resp,
+                                description: ' min',
+                                screenSize: screenSize,
+                              ),
+                            ],
+                          ),
+                          IconButton(
+                            onPressed: _onPressPlay,
+                            icon: _isRunning
+                                ? Icon(
+                                    Icons.pause_circle_filled,
+                                    size: screenSize.height * .1,
+                                    color: Colors.grey,
+                                  )
+                                : Icon(
+                                    Icons.play_circle_fill_outlined,
+                                    size: screenSize.height * .1,
+                                    color: Colors.white,
+                                  ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+
+                Positioned(
+                  bottom: 0,
+                  left: screenSize.width * .02,
+                  child: SettingTimeWidget(
+                    onTap: () {},
+                    title: 'Total%',
+                    // 全時間を100%として残り%を表示
+                    settingTime: _computeTotalRemainingPercent(),
+                    description: '%',
+                    screenSize: screenSize,
+                  ),
+                ),
+                Positioned(
+                  bottom: 0,
+                  right: screenSize.width * .028,
+                  child: SettingTimeWidget(
+                    onTap: () {},
+                    title: '    Total Time',
+                    settingTime: (workTime * resp) + (restTime * resp),
+                    description: 'min',
+                    screenSize: screenSize,
+                  ),
+                ),
+                Positioned(
+                  top: screenSize.width * .12,
+                  // 10/10 の位置はそのまま、9以下（1桁）の場合は少し左へ寄せる
+                  right: screenSize.width * (.12 + (resp < 10 ? .0 : -.08)),
+                  child: GestureDetector(
+                    onTap: () => _showTimeSettingsPicker(screenSize),
                     child: RichText(
                       text: TextSpan(
-                        text: 'x',
+                        // 残りサイクル数/合計サイクル数（x2が1減る挙動）
+                        text: _remainingCycles.toString(),
                         style: GoogleFonts.roboto(
-                          fontSize: screenSize.width * .12,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black,
+                          color: Colors.white,
+                          fontSize: screenSize.width * .16,
+                          letterSpacing: 4,
                         ),
                         children: [
                           TextSpan(
-                            text: '4',
+                            text: '/',
                             style: GoogleFonts.roboto(
-                              fontSize: screenSize.width * .16,
+                              fontSize: screenSize.width * .1,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                              letterSpacing: 4,
+                            ),
+                          ),
+                          TextSpan(
+                            text: resp.toString(),
+                            style: GoogleFonts.roboto(
+                              fontSize: screenSize.width * .06,
+                              letterSpacing: 4,
                             ),
                           ),
                         ],
@@ -172,7 +557,7 @@ class SettingTimeWidget extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             title,
