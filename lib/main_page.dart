@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:pomodd_kusa/color_style.dart';
 import 'dart:math' as math;
 import 'dart:async';
+import 'package:flutter/services.dart';
 
 class MainPage extends StatefulWidget {
   const MainPage({super.key});
@@ -99,6 +100,85 @@ class _MainPageState extends State<MainPage>
         );
       },
     );
+  }
+
+  // フェーズ切り替え音（システムのクリック音を再生）
+  void _playPhaseChangeSound() {
+    // Work/Rest 切り替え時にシステムのアラート音 + 触覚フィードバック
+    SystemSound.play(SystemSoundType.click);
+    HapticFeedback.mediumImpact();
+  }
+
+  // 設定変更の確認ダイアログ（実行中/一時停止中にタップされた場合）
+  Future<bool> _showChangeConfirmDialog() async {
+    if (!mounted) return false;
+    final bool? shouldChange = await showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: Colors.black,
+          title: Text(
+            '設定を変更しますか？',
+            style: GoogleFonts.roboto(color: Colors.white),
+          ),
+          content: Text(
+            '変更すると現在のタイマーはリセットされ、新しい設定で開始します。',
+            style: GoogleFonts.roboto(color: Colors.white70),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('キャンセル'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('変更'),
+            ),
+          ],
+        );
+      },
+    );
+    return shouldChange ?? false;
+  }
+
+  // タイマーを停止して進捗をリセット
+  void _stopAndResetTimer() {
+    _animationController.stop();
+    _animationController.reset();
+    setState(() {
+      _isRunning = false;
+      _isPaused = false;
+      _progress = 0.0;
+      // フェーズ（Work/Rest）とサイクル数は維持
+    });
+  }
+
+  // ピッカーを開き、閉じたら新設定で現在フェーズを再スタート
+  Future<void> _openPickerAndRestart(Size screenSize) async {
+    await _showTimeSettingsPicker(screenSize);
+    // 設定変更は新セッションとして扱い、Total%を100%から減らすため
+    // サイクルとフェーズを初期状態に戻して開始
+    setState(() {
+      _currentCycle = 0;
+      _isWorkPhase = true; // Workから再スタート
+      _progress = 0.0;
+    });
+    _startCurrentPhase();
+  }
+
+  // 設定項目タップ時の共通ハンドラ
+  Future<void> _onTapSettings(Size screenSize) async {
+    // 実行中/一時停止中は確認、停止中はそのままピッカー
+    if (_isRunning || _isPaused) {
+      final bool ok = await _showChangeConfirmDialog();
+      if (!ok) return; // キャンセル
+      _stopAndResetTimer();
+      await _openPickerAndRestart(screenSize);
+    } else {
+      await _showTimeSettingsPicker(screenSize);
+      // 停止中は自動開始しない（現状の挙動を維持）
+    }
   }
 
   // 現在フェーズ（Work/Rest）の合計秒数
@@ -278,12 +358,15 @@ class _MainPageState extends State<MainPage>
   void _handlePhaseComplete() {
     if (_isWorkPhase) {
       // Workが終わったらRestへ
+      _playPhaseChangeSound();
       _isWorkPhase = false;
       _startCurrentPhase();
     } else {
       // Restが終わったら次サイクルへ
       _currentCycle += 1;
       if (_currentCycle < resp) {
+        // Rest→Work への切り替えでもクリック音を鳴らす
+        _playPhaseChangeSound();
         _isWorkPhase = true;
         _startCurrentPhase();
       } else {
@@ -366,7 +449,7 @@ class _MainPageState extends State<MainPage>
                   left: screenSize.width * .036,
                   child: Opacity(
                     // 実行中のみ1秒ごとの点滅（非実行時は常に表示）
-                    opacity: _isRunning ? (_blinkOn ? 1.0 : 0.0) : 1.0,
+                    opacity: _isRunning ? (_blinkOn ? 1.0 : 0.1) : 1.0,
                     child: Text(
                       _isWorkPhase ? 'Work' : 'Rest',
                       style: GoogleFonts.roboto(
@@ -409,18 +492,18 @@ class _MainPageState extends State<MainPage>
                             spacing: 20,
                             children: [
                               SettingTimeWidget(
-                                onTap: () =>
-                                    _showTimeSettingsPicker(screenSize),
+                                onTap: () => _onTapSettings(screenSize),
                                 title: 'Work Time',
                                 settingTime: workTime,
+                                valueFontSize: screenSize.height * .07,
                                 description: ' min',
                                 screenSize: screenSize,
                               ),
                               SettingTimeWidget(
-                                onTap: () =>
-                                    _showTimeSettingsPicker(screenSize),
+                                onTap: () => _onTapSettings(screenSize),
                                 title: 'Rest Time',
                                 settingTime: restTime,
+                                valueFontSize: screenSize.height * .07,
                                 description: ' min',
                                 screenSize: screenSize,
                               ),
@@ -494,7 +577,7 @@ class _MainPageState extends State<MainPage>
                   // 10/10 の位置はそのまま、9以下（1桁）の場合は少し左へ寄せる
                   right: screenSize.width * (.12 + (resp < 10 ? .0 : -.08)),
                   child: GestureDetector(
-                    onTap: () => _showTimeSettingsPicker(screenSize),
+                    onTap: () => _onTapSettings(screenSize),
                     child: RichText(
                       text: TextSpan(
                         // 残りサイクル数/合計サイクル数（x2が1減る挙動）
@@ -543,6 +626,10 @@ class SettingTimeWidget extends StatelessWidget {
   final String description;
   final int settingTime;
   final Size screenSize;
+  // 任意指定のフォントサイズ（未指定時はデフォルトサイズを使用）
+  final double? titleFontSize;
+  final double? valueFontSize;
+  final double? descriptionFontSize;
   SettingTimeWidget({
     super.key,
     required this.title,
@@ -550,6 +637,9 @@ class SettingTimeWidget extends StatelessWidget {
     required this.description,
     required this.onTap,
     required this.screenSize,
+    this.titleFontSize,
+    this.valueFontSize,
+    this.descriptionFontSize,
   });
 
   @override
@@ -557,12 +647,12 @@ class SettingTimeWidget extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Text(
             title,
             style: GoogleFonts.roboto(
-              fontSize: screenSize.width * .03,
+              fontSize: titleFontSize ?? screenSize.width * .03,
               color: Colors.white,
               fontWeight: FontWeight.w400,
             ),
@@ -571,7 +661,7 @@ class SettingTimeWidget extends StatelessWidget {
             text: TextSpan(
               text: settingTime.toString(),
               style: GoogleFonts.roboto(
-                fontSize: screenSize.width * .12,
+                fontSize: valueFontSize ?? screenSize.width * .12,
                 color: Colors.white,
                 fontWeight: FontWeight.w400,
               ),
@@ -579,7 +669,7 @@ class SettingTimeWidget extends StatelessWidget {
                 TextSpan(
                   text: description,
                   style: GoogleFonts.roboto(
-                    fontSize: 12,
+                    fontSize: descriptionFontSize ?? 12,
                     color: Colors.white,
                     fontWeight: FontWeight.w400,
                   ),
