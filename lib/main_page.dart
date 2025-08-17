@@ -5,6 +5,8 @@ import 'package:pomodd_kusa/color_style.dart';
 import 'dart:math' as math;
 import 'dart:async';
 import 'package:flutter/services.dart';
+import 'package:pomodd_kusa/contribution_section.dart';
+import 'package:pomodd_kusa/data_helper.dart';
 
 class MainPage extends StatefulWidget {
   const MainPage({super.key});
@@ -19,6 +21,27 @@ class _MainPageState extends State<MainPage>
   int workTime = 25;
   int restTime = 5;
   int resp = 5;
+
+  // 設定の保存/読み込み（DataHelper に委譲）
+  Future<void> _saveSettings() async {
+    await DataHelper.saveUserSettings(
+      UserSettings(workTime: workTime, restTime: restTime, resp: resp),
+    );
+  }
+
+  Future<void> _loadSettings() async {
+    final UserSettings s = await DataHelper.loadUserSettings(
+      defaultWork: workTime,
+      defaultRest: restTime,
+      defaultResp: resp,
+    );
+    if (!mounted) return;
+    setState(() {
+      workTime = s.workTime;
+      restTime = s.restTime;
+      resp = s.resp;
+    });
+  }
 
   // タイマー/アニメーション用の状態
   late final AnimationController _animationController; // 0.0→1.0で進行
@@ -302,6 +325,8 @@ class _MainPageState extends State<MainPage>
       restTime = tempRest.clamp(1, 10);
       resp = tempResp.clamp(1, 10);
     });
+    // 設定変更を保存（次回起動時も反映される）
+    unawaited(_saveSettings());
   }
 
   @override
@@ -332,6 +357,12 @@ class _MainPageState extends State<MainPage>
         _blinkOn = !_blinkOn;
       });
     });
+
+    // 起動時にユーザー設定を読み込む（保存済みなら UI に反映）
+    // 非同期だが、読み込み後に setState で即座に表示を更新する。
+    // タイマーの実行処理は _startCurrentPhase() 側で duration を都度設定するため影響なし。
+    // ignore: discarded_futures
+    _loadSettings();
   }
 
   @override
@@ -376,6 +407,13 @@ class _MainPageState extends State<MainPage>
           _isPaused = false;
           _progress = 1.0;
         });
+        // 1セッション（Work+Rest）完了を貢献として記録
+        // ※ ユーザーの毎日の達成回数を GitHub 風に可視化するため
+        unawaited(DataHelper.addContribution(DateTime.now(), delta: 1));
+
+        // 初回セッション完了時に起点日を記録（プレイボタン押下ではなく実際の達成時点）
+        _recordFirstPlayIfNeeded();
+
         // ダイアログで完了通知
         _showCompletionDialog();
       }
@@ -419,6 +457,17 @@ class _MainPageState extends State<MainPage>
     _isWorkPhase = true;
     _progress = 0.0;
     _startCurrentPhase();
+  }
+
+  // 初回プレイ日の記録（まだ設定されていない場合のみ）
+  void _recordFirstPlayIfNeeded() {
+    // 非同期だが UI ブロックは不要のため unawaited で実行
+    unawaited(() async {
+      final DateTime? existing = await DataHelper.loadFirstPlayDate();
+      if (existing == null) {
+        await DataHelper.saveFirstPlayDate(DateTime.now());
+      }
+    }());
   }
 
   @override
@@ -612,7 +661,7 @@ class _MainPageState extends State<MainPage>
               ],
             ),
           ),
-          Expanded(flex: 1, child: Container(color: Colors.deepOrangeAccent)),
+          ContributionSection(),
         ],
       ),
     );
