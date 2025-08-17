@@ -761,8 +761,8 @@ class _TwoThirdCircularIndicator extends StatelessWidget {
   Widget build(BuildContext context) {
     return Center(
       child: SizedBox(
-        width: radius * 2,
-        height: radius * 2,
+        width: radius * 1.98,
+        height: radius * 1.98,
         child: Stack(
           alignment: Alignment.center,
           children: [

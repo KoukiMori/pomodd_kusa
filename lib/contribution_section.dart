@@ -32,52 +32,21 @@ class _ContributionSectionState extends State<ContributionSection> {
 
   @override
   Widget build(BuildContext context) {
-    // 初回プレイ日が設定されていない場合は空表示
-    if (_firstPlayDate == null) {
-      return Expanded(
-        flex: 1,
-        child: Container(
-          color: Colors.black,
-          child: Center(
-            child: Text(
-              'セッションを完了すると\n貢献グラフが表示されます',
-              textAlign: TextAlign.center,
-              style: GoogleFonts.roboto(color: Colors.white54, fontSize: 16),
-            ),
-          ),
-        ),
-      );
-    }
-
     final DateTime today = DateTime.now();
-    final DateTime startDate = _firstPlayDate!;
 
-    // 表示する月の範囲を決定（今月から過去12ヶ月）
-    final List<DateTime> months = [];
-    for (int i = 0; i < 12; i++) {
-      final DateTime month = DateTime(today.year, today.month - i, 1);
-      if (month.isBefore(startDate) ||
-          month.isAtSameMomentAs(
-            DateTime(startDate.year, startDate.month, 1),
-          )) {
-        break; // 起点月より前は表示しない
-      }
-      months.add(month);
-    }
+    // 表示する月の範囲（今月から過去5ヶ月＝計6ヶ月）
+    final List<DateTime> months = List<DateTime>.generate(
+      6,
+      (i) => DateTime(today.year, today.month - i, 1),
+    );
 
-    // 起点月も含める
-    if (months.isEmpty ||
-        !months.any(
-          (m) => m.year == startDate.year && m.month == startDate.month,
-        )) {
-      months.add(DateTime(startDate.year, startDate.month, 1));
-    }
-
-    // 新しい順（今月が最初）にソート
-    months.sort((a, b) => b.compareTo(a));
+    // 実データが無い場合はダミーデータで表示
+    final Map<String, int> viewData = (_firstPlayDate == null || _data.isEmpty)
+        ? _buildDummyContributionData(months)
+        : _data;
 
     // 値の最大を求め、レベル分け（0..4）
-    final int maxVal = _data.values.fold<int>(0, (p, e) => math.max(p, e));
+    final int maxVal = viewData.values.fold<int>(0, (p, e) => math.max(p, e));
     int levelFor(int v) {
       if (v <= 0) return 0;
       if (maxVal <= 0) return 1;
@@ -103,38 +72,55 @@ class _ContributionSectionState extends State<ContributionSection> {
       }
     }
 
-    return Expanded(
-      flex: 1,
-      child: Container(
-        color: Colors.black,
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // 年表示
-            Text(
-              '${today.year}',
-              style: GoogleFonts.roboto(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.w500,
-              ),
+    return Container(
+      color: Colors.black,
+      padding: const EdgeInsets.all(16),
+      height: 400, // 固定高さを設定してレイアウトエラーを回避
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 年表示
+          Text(
+            '${today.year}',
+            style: GoogleFonts.roboto(
+              color: Colors.white,
+              fontSize: 24,
+              fontWeight: FontWeight.w500,
             ),
-            const SizedBox(height: 8),
-            // 月別カレンダーグリッド
-            Expanded(
-              child: SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: months.map((month) {
-                    return _buildMonthGrid(month, levelFor, colorFor);
-                  }).toList(),
-                ),
-              ),
+          ),
+          // 月別カレンダーグリッド（2列配置）。
+          // 当月（左上）→1ヶ月前（右）→2ヶ月前（次段左）→3ヶ月前（次段右）…
+          Expanded(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                const double cardGap = 10; // 月カード間の隙間
+                final double columnWidth = (constraints.maxWidth - cardGap) / 2;
+                return SingleChildScrollView(
+                  child: Wrap(
+                    spacing: cardGap,
+                    runSpacing: cardGap,
+                    children: months.map((month) {
+                      // 列幅に合わせて日セルサイズを算出（7列 + 6ギャップ + 余裕）
+                      const double dayGap = 2;
+                      final double cellSize =
+                          (columnWidth - (6 * dayGap) - 4) / 7;
+                      return SizedBox(
+                        width: columnWidth,
+                        child: _buildMonthGrid(
+                          month,
+                          levelFor,
+                          colorFor,
+                          viewData,
+                          cellSize,
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                );
+              },
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -144,10 +130,10 @@ class _ContributionSectionState extends State<ContributionSection> {
     DateTime month,
     int Function(int) levelFor,
     Color Function(int) colorFor,
+    Map<String, int> viewData,
+    double cellSize,
   ) {
-    const double cellSize = 22;
-    const double gap = 2;
-    const double monthWidth = (cellSize + gap) * 7 + 16; // 7日分 + 余白
+    const double gap = 2; // 日セル間の隙間
 
     // 月の最初と最後
     final DateTime firstDay = DateTime(month.year, month.month, 1);
@@ -161,79 +147,80 @@ class _ContributionSectionState extends State<ContributionSection> {
     final int totalDays = lastDay.day + firstWeekday;
     final int weeks = (totalDays / 7).ceil();
 
-    return Container(
-      width: monthWidth,
-      margin: const EdgeInsets.only(right: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // 月ラベル
-          Text(
-            _getMonthName(month.month),
-            style: GoogleFonts.roboto(color: Colors.white54, fontSize: 12),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // 月ラベル（MM/Mon 表記。例: 08/Aug, 09/Sep）
+        Text(
+          _formatMonthLabel(month),
+          style: GoogleFonts.roboto(
+            color: Colors.white54,
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
           ),
-          const SizedBox(height: 4),
-          // 曜日ヘッダー（一部のみ表示）
-          Row(
-            children: List.generate(7, (day) {
-              final String label = _getWeekdayHeaderLabel(day);
-              return Container(
-                width: cellSize + gap,
-                height: 12,
-                alignment: Alignment.center,
-                child: label.isNotEmpty
-                    ? Text(
-                        label,
-                        style: GoogleFonts.roboto(
-                          color: Colors.white54,
-                          fontSize: 8,
-                        ),
-                      )
-                    : null,
-              );
-            }),
-          ),
-          const SizedBox(height: 2),
-          // カレンダーグリッド
-          Column(
-            children: List.generate(weeks, (week) {
-              return Padding(
-                padding: EdgeInsets.only(bottom: gap),
-                child: Row(
-                  children: List.generate(7, (day) {
-                    final DateTime date = gridStart.add(
-                      Duration(days: week * 7 + day),
-                    );
+        ),
+        const SizedBox(height: 4),
+        // 曜日ヘッダー（一部のみ表示）
+        Row(
+          children: List.generate(7, (day) {
+            final String label = _getWeekdayHeaderLabel(day);
+            return Container(
+              width: cellSize,
+              height: 14,
+              alignment: Alignment.center,
+              margin: EdgeInsets.only(right: day == 6 ? 0 : gap),
+              child: label.isNotEmpty
+                  ? Text(
+                      label,
+                      style: GoogleFonts.roboto(
+                        color: Colors.white54,
+                        fontSize: 12,
+                      ),
+                    )
+                  : null,
+            );
+          }),
+        ),
+        const SizedBox(height: 4),
+        // カレンダーグリッド
+        Column(
+          children: List.generate(weeks, (week) {
+            return Padding(
+              padding: EdgeInsets.only(bottom: gap),
+              child: Row(
+                children: List.generate(7, (day) {
+                  final DateTime date = gridStart.add(
+                    Duration(days: week * 7 + day),
+                  );
 
-                    // 月外の日は表示しない
-                    if (date.month != month.month) {
-                      return Container(
-                        width: cellSize,
-                        height: cellSize,
-                        margin: EdgeInsets.only(right: gap),
-                      );
-                    }
-
-                    final String key = _dateKey(date);
-                    final int value = _data[key] ?? 0;
-                    final int level = levelFor(value);
-
+                  // 月外の日は表示しない
+                  if (date.month != month.month) {
                     return Container(
                       width: cellSize,
                       height: cellSize,
-                      margin: EdgeInsets.only(right: gap),
-                      decoration: BoxDecoration(
-                        color: colorFor(level),
-                        borderRadius: BorderRadius.circular(2),
-                      ),
+                      margin: EdgeInsets.only(right: day == 6 ? 0 : gap),
                     );
-                  }),
-                ),
-              );
-            }),
-          ),
-        ],
-      ),
+                  }
+
+                  final String key = _dateKey(date);
+                  final int value = viewData[key] ?? 0;
+                  final int level = levelFor(value);
+
+                  return Container(
+                    width: cellSize,
+                    height: cellSize,
+                    margin: EdgeInsets.only(right: day == 6 ? 0 : gap),
+                    decoration: BoxDecoration(
+                      color: colorFor(level),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  );
+                }),
+              ),
+            );
+          }),
+        ),
+      ],
     );
   }
 
@@ -266,8 +253,9 @@ class _ContributionSectionState extends State<ContributionSection> {
     }
   }
 
-  // 月名を取得（英語略称）
-  String _getMonthName(int month) {
+  // 月ラベルを MM/Mon で返す（例: 08/Aug, 09/Sep）
+  String _formatMonthLabel(DateTime date) {
+    final String mm = date.month.toString().padLeft(2, '0');
     const List<String> months = [
       'Jan',
       'Feb',
@@ -282,6 +270,24 @@ class _ContributionSectionState extends State<ContributionSection> {
       'Nov',
       'Dec',
     ];
-    return months[month - 1];
+    final String mon = months[date.month - 1];
+    return '$mm/$mon';
+  }
+
+  // ダミーのコントリビューションデータを生成
+  Map<String, int> _buildDummyContributionData(List<DateTime> months) {
+    final Map<String, int> map = <String, int>{};
+    // 固定シードで毎回同じ見た目
+    final math.Random rng = math.Random(42);
+    for (final m in months) {
+      final DateTime firstDay = DateTime(m.year, m.month, 1);
+      final DateTime lastDay = DateTime(m.year, m.month + 1, 0);
+      for (int d = 0; d < lastDay.day; d++) {
+        final DateTime date = firstDay.add(Duration(days: d));
+        final String key = _dateKey(date);
+        map[key] = rng.nextInt(11); // 0〜10
+      }
+    }
+    return map;
   }
 }
