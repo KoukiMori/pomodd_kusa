@@ -557,6 +557,18 @@ class _MainPageState extends State<MainPage>
                   ),
                 ),
                 Positioned(
+                  top: screenSize.width * .15,
+                  left: screenSize.width * .036,
+                  child: IconButton(
+                    onPressed: () {},
+                    icon: Icon(
+                      Icons.timer_off_outlined,
+                      size: screenSize.width * .1,
+                      color: Colors.deepOrangeAccent,
+                    ),
+                  ),
+                ),
+                Positioned(
                   top: screenSize.width * .16,
                   right: screenSize.width * .036,
                   child: SizedBox(
@@ -671,7 +683,7 @@ class _MainPageState extends State<MainPage>
                 Positioned(
                   top: screenSize.width * .12,
                   // 10/10 の位置はそのまま、9以下（1桁）の場合は少し左へ寄せる
-                  right: screenSize.width * (.12 + (resp < 10 ? .0 : -.08)),
+                  right: screenSize.width * (.12 + (resp < 10 ? -.03 : -.09)),
                   child: GestureDetector(
                     onTap: () => _onTapSettings(screenSize),
                     child: RichText(
@@ -681,7 +693,7 @@ class _MainPageState extends State<MainPage>
                         style: GoogleFonts.roboto(
                           color: Colors.white,
                           fontSize: screenSize.width * .16,
-                          letterSpacing: 4,
+                          letterSpacing: resp < 10 ? 6 : -2,
                         ),
                         children: [
                           TextSpan(
@@ -690,14 +702,14 @@ class _MainPageState extends State<MainPage>
                               fontSize: screenSize.width * .1,
                               fontWeight: FontWeight.bold,
                               color: Colors.white,
-                              letterSpacing: 4,
+                              letterSpacing: resp < 10 ? 6 : 1,
                             ),
                           ),
                           TextSpan(
                             text: resp.toString(),
                             style: GoogleFonts.roboto(
                               fontSize: screenSize.width * .06,
-                              letterSpacing: 4,
+                              letterSpacing: resp < 10 ? 6 : 1,
                             ),
                           ),
                         ],
