@@ -10,6 +10,8 @@ class DataHelper {
   static const String _kRespKey = 'resp_count';
   static const String _kContribMapKey = 'contrib_map'; // 日付→実施回数マップ
   static const String _kFirstPlayDateKey = 'first_play_date'; // 初回プレイ日（起点）
+  static const String _kDailyWorkSecMapKey = 'daily_work_sec_map'; // 日付→合計作業秒
+  static const String _kDailyRestSecMapKey = 'daily_rest_sec_map'; // 日付→合計休憩秒
 
   const DataHelper._();
 
@@ -41,6 +43,54 @@ class DataHelper {
     final String mm = d.month.toString().padLeft(2, '0');
     final String dd = d.day.toString().padLeft(2, '0');
     return '${d.year}-$mm-$dd';
+  }
+
+  /// 日別実績: 対象日の作業/休憩秒を読み出す
+  static Future<(int workSec, int restSec)> loadDailyActual(
+    DateTime date,
+  ) async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    final String key = _dateKey(date);
+    final String? wRaw = prefs.getString(_kDailyWorkSecMapKey);
+    final String? rRaw = prefs.getString(_kDailyRestSecMapKey);
+    final Map<String, dynamic> wMap = wRaw == null || wRaw.isEmpty
+        ? <String, dynamic>{}
+        : (json.decode(wRaw) as Map<String, dynamic>);
+    final Map<String, dynamic> rMap = rRaw == null || rRaw.isEmpty
+        ? <String, dynamic>{}
+        : (json.decode(rRaw) as Map<String, dynamic>);
+    final int w = (wMap[key] as num?)?.toInt() ?? 0;
+    final int r = (rMap[key] as num?)?.toInt() ?? 0;
+    return (w, r);
+  }
+
+  /// 日別実績: 対象日に作業/休憩秒の増分を加算して保存
+  static Future<void> addDailyActual(
+    DateTime date, {
+    int workSecDelta = 0,
+    int restSecDelta = 0,
+  }) async {
+    if (workSecDelta == 0 && restSecDelta == 0) return;
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    final String key = _dateKey(date);
+
+    // 作業
+    final String? wRaw = prefs.getString(_kDailyWorkSecMapKey);
+    final Map<String, dynamic> wMap = wRaw == null || wRaw.isEmpty
+        ? <String, dynamic>{}
+        : (json.decode(wRaw) as Map<String, dynamic>);
+    final int currentW = (wMap[key] as num?)?.toInt() ?? 0;
+    wMap[key] = (currentW + workSecDelta).clamp(0, 86400 * 10);
+    await prefs.setString(_kDailyWorkSecMapKey, json.encode(wMap));
+
+    // 休憩
+    final String? rRaw = prefs.getString(_kDailyRestSecMapKey);
+    final Map<String, dynamic> rMap = rRaw == null || rRaw.isEmpty
+        ? <String, dynamic>{}
+        : (json.decode(rRaw) as Map<String, dynamic>);
+    final int currentR = (rMap[key] as num?)?.toInt() ?? 0;
+    rMap[key] = (currentR + restSecDelta).clamp(0, 86400 * 10);
+    await prefs.setString(_kDailyRestSecMapKey, json.encode(rMap));
   }
 
   /// 既存の貢献マップを読み込む（キー: yyyy-MM-dd, 値: 実施回数）

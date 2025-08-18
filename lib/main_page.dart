@@ -7,6 +7,7 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 import 'package:pomodd_kusa/contribution_section.dart';
 import 'package:pomodd_kusa/data_helper.dart';
+import 'package:pomodd_kusa/preset_settings_page.dart';
 
 class MainPage extends StatefulWidget {
   const MainPage({super.key});
@@ -169,6 +170,17 @@ class _MainPageState extends State<MainPage>
   void _stopAndResetTimer() {
     _animationController.stop();
     _animationController.reset();
+    // 途中停止時に、その時点までの経過を実績へ加算
+    final int addWork = _isWorkPhase ? (_progress * workTime * 60).round() : 0;
+    final int addRest = !_isWorkPhase ? (_progress * restTime * 60).round() : 0;
+    if (addWork > 0 || addRest > 0) {
+      // ignore: discarded_futures
+      DataHelper.addDailyActual(
+        DateTime.now(),
+        workSecDelta: addWork,
+        restSecDelta: addRest,
+      );
+    }
     setState(() {
       _isRunning = false;
       _isPaused = false;
@@ -219,7 +231,7 @@ class _MainPageState extends State<MainPage>
       context: context,
       builder: (context) {
         // 指定件数の 1..N を生成（ピッカー用）
-        List<Widget> _numberItems(int count) =>
+        List<Widget> numberItems(int count) =>
             List.generate(count, (i) => Center(child: Text('${i + 1}')));
 
         return CupertinoPopupSurface(
@@ -281,7 +293,7 @@ class _MainPageState extends State<MainPage>
                           ),
                           onSelectedItemChanged: (index) =>
                               tempWork = index + 1,
-                          children: _numberItems(60), // Work: 1..60
+                          children: numberItems(60), // Work: 1..60
                         ),
                       ),
                       Expanded(
@@ -295,7 +307,7 @@ class _MainPageState extends State<MainPage>
                           ),
                           onSelectedItemChanged: (index) =>
                               tempRest = index + 1,
-                          children: _numberItems(10), // Rest: 1..10
+                          children: numberItems(10), // Rest: 1..10
                         ),
                       ),
                       Expanded(
@@ -306,7 +318,7 @@ class _MainPageState extends State<MainPage>
                           ),
                           onSelectedItemChanged: (index) =>
                               tempResp = index + 1,
-                          children: _numberItems(10), // Resp: 1..10
+                          children: numberItems(10), // Resp: 1..10
                         ),
                       ),
                     ],
@@ -390,10 +402,16 @@ class _MainPageState extends State<MainPage>
     if (_isWorkPhase) {
       // Workが終わったらRestへ
       _playPhaseChangeSound();
+      // 実績に作業分を加算
+      // ignore: discarded_futures
+      DataHelper.addDailyActual(DateTime.now(), workSecDelta: workTime * 60);
       _isWorkPhase = false;
       _startCurrentPhase();
     } else {
       // Restが終わったら次サイクルへ
+      // 実績に休憩分を加算
+      // ignore: discarded_futures
+      DataHelper.addDailyActual(DateTime.now(), restSecDelta: restTime * 60);
       _currentCycle += 1;
       if (_currentCycle < resp) {
         // Rest→Work への切り替えでもクリック音を鳴らす
@@ -477,6 +495,8 @@ class _MainPageState extends State<MainPage>
       backgroundColor: Colors.black,
       appBar: AppBar(
         backgroundColor: Colors.black,
+        centerTitle: true, // タイトルを中央に配置
+        leading: SizedBox(width: kToolbarHeight), // 右のactionsとバランスを取り真の中央に揃える
         title: Text(
           'PomodGrass',
           style: GoogleFonts.roboto(
@@ -486,6 +506,33 @@ class _MainPageState extends State<MainPage>
           ),
         ),
         toolbarHeight: screenSize.height * .03,
+        actions: [
+          // タイトルと縦位置がずれないよう微調整（上に数px）
+          Transform.translate(
+            offset: const Offset(0, -6),
+            child: IconButton(
+              onPressed: () async {
+                // プリセット選択画面へ遷移し、結果を受け取って反映
+                final result = await Navigator.of(context)
+                    .push<Map<String, int>>(
+                      MaterialPageRoute(
+                        builder: (_) => const PresetSettingsPage(),
+                      ),
+                    );
+                if (result != null) {
+                  setState(() {
+                    workTime = result['work'] ?? workTime;
+                    restTime = result['rest'] ?? restTime;
+                  });
+                  // 保存して次回起動にも反映
+                  // ignore: discarded_futures
+                  _saveSettings();
+                }
+              },
+              icon: const Icon(Icons.settings, color: Colors.white, size: 26),
+            ),
+          ),
+        ],
       ),
       body: Column(
         children: [
