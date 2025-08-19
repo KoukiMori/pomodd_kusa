@@ -204,44 +204,78 @@ class PresetSettingsPage extends StatelessWidget {
       context: context,
       barrierDismissible: true,
       builder: (ctx) {
-        return AlertDialog(
-          backgroundColor: Colors.black,
-          title: Text(
-            'この設定を適用しますか？',
-            style: GoogleFonts.roboto(color: Colors.white),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _rowText('10段階評価', '${eval.score10}'),
-              _rowText('作業時間', '${preset.work}分'),
-              _rowText('休憩時間', '${preset.rest}分'),
-              _rowText('1サイクル合計', '${eval.cycleMinutes}分'),
-              _rowText(
-                '1時間あたりの休憩回数',
-                '約${eval.breaksPerHour.toStringAsFixed(1)}回',
+        int selectedCycles = 4; // 標準値
+        return StatefulBuilder(
+          builder: (context, setStateSB) {
+            return AlertDialog(
+              backgroundColor: Colors.black,
+              title: Text(
+                'この設定を適用しますか？',
+                style: GoogleFonts.roboto(color: Colors.white),
               ),
-              _rowText('頻度の評価', eval.frequencyLabel),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('キャンセル'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('実行'),
-            ),
-          ],
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _rowText('10段階評価', '${eval.score10}'),
+                  _rowText('作業時間', '${preset.work}分'),
+                  _rowText('休憩時間', '${preset.rest}分'),
+                  _rowText('1サイクル合計', '${eval.cycleMinutes}分'),
+                  _rowText(
+                    '1時間あたりの休憩回数',
+                    '約${eval.breaksPerHour.toStringAsFixed(1)}回',
+                  ),
+                  _rowText('頻度の評価', eval.frequencyLabel),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        'サイクル数',
+                        style: GoogleFonts.roboto(color: Colors.white70),
+                      ),
+                      DropdownButton<int>(
+                        value: selectedCycles,
+                        dropdownColor: Colors.black,
+                        style: GoogleFonts.roboto(color: Colors.white),
+                        items: List.generate(10, (i) {
+                          final val = i + 1;
+                          return DropdownMenuItem<int>(
+                            value: val,
+                            child: Text('$val'),
+                          );
+                        }),
+                        onChanged: (v) =>
+                            setStateSB(() => selectedCycles = v ?? 4),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(false),
+                  child: const Text('キャンセル'),
+                ),
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(ctx).pop(true);
+                    Navigator.of(context).pop(<String, int>{
+                      'work': preset.work,
+                      'rest': preset.rest,
+                      'resp': selectedCycles,
+                    });
+                  },
+                  child: const Text('実行'),
+                ),
+              ],
+            );
+          },
         );
       },
     );
     if (ok == true) {
-      Navigator.of(
-        context,
-      ).pop(<String, int>{'work': preset.work, 'rest': preset.rest});
+      // すでにpop済み（上で返却）。ここでは何もしない。
     }
   }
 

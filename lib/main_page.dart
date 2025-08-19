@@ -53,6 +53,7 @@ class _MainPageState extends State<MainPage>
   Timer? _blinkTimer; // 1秒ごとの点滅用
   bool _blinkOn = true; // true: 表示, false: 非表示
   bool _isPaused = false; // 一時停止中かどうか
+  bool _previewLegend = false; // コントリビューション配色プレビュー
 
   // 全体残り割合（全Work+Rest×respを100%として減少）
   int _computeTotalRemainingPercent() {
@@ -510,26 +511,48 @@ class _MainPageState extends State<MainPage>
           // タイトルと縦位置がずれないよう微調整（上に数px）
           Transform.translate(
             offset: const Offset(0, -6),
-            child: IconButton(
-              onPressed: () async {
-                // プリセット選択画面へ遷移し、結果を受け取って反映
-                final result = await Navigator.of(context)
-                    .push<Map<String, int>>(
-                      MaterialPageRoute(
-                        builder: (_) => const PresetSettingsPage(),
-                      ),
-                    );
-                if (result != null) {
-                  setState(() {
-                    workTime = result['work'] ?? workTime;
-                    restTime = result['rest'] ?? restTime;
-                  });
-                  // 保存して次回起動にも反映
-                  // ignore: discarded_futures
-                  _saveSettings();
-                }
-              },
-              icon: const Icon(Icons.settings, color: Colors.white, size: 26),
+            child: Row(
+              children: [
+                IconButton(
+                  onPressed: () {
+                    setState(() => _previewLegend = !_previewLegend);
+                  },
+                  icon: Icon(
+                    _previewLegend ? Icons.visibility : Icons.visibility_off,
+                    color: Colors.white,
+                  ),
+                  tooltip: 'Legend Preview',
+                ),
+                IconButton(
+                  onPressed: () async {
+                    // プリセット選択画面へ遷移し、結果を受け取って反映
+                    final result = await Navigator.of(context)
+                        .push<Map<String, int>>(
+                          MaterialPageRoute(
+                            builder: (_) => const PresetSettingsPage(),
+                          ),
+                        );
+                    if (result != null) {
+                      setState(() {
+                        workTime = result['work'] ?? workTime;
+                        restTime = result['rest'] ?? restTime;
+                        // サイクル数も受け取れたら反映
+                        if (result.containsKey('resp')) {
+                          resp = (result['resp'] ?? resp).clamp(1, 10);
+                        }
+                      });
+                      // 保存して次回起動にも反映
+                      // ignore: discarded_futures
+                      _saveSettings();
+                    }
+                  },
+                  icon: const Icon(
+                    Icons.settings,
+                    color: Colors.white,
+                    size: 26,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -720,7 +743,7 @@ class _MainPageState extends State<MainPage>
               ],
             ),
           ),
-          ContributionSection(),
+          ContributionSection(previewLegend: _previewLegend),
         ],
       ),
     );

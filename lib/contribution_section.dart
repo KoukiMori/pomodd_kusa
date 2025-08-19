@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:pomodd_kusa/data_helper.dart';
+import 'package:pomodd_kusa/pomod_rule.dart';
 import 'dart:math' as math;
 import 'package:google_fonts/google_fonts.dart';
 
 class ContributionSection extends StatefulWidget {
-  const ContributionSection({super.key});
+  final bool previewLegend; // プレビュー（10段階）を全セルに適用
+  const ContributionSection({super.key, this.previewLegend = false});
 
   @override
   State<ContributionSection> createState() => _ContributionSectionState();
@@ -13,11 +15,31 @@ class ContributionSection extends StatefulWidget {
 class _ContributionSectionState extends State<ContributionSection> {
   Map<String, int> _data = <String, int>{};
   DateTime? _firstPlayDate;
+  // Color? _todayLegendColor; // 当日の実績に基づく評価色（未使用）
+  static const List<Color> _legendPalette = [
+    Color(0xFF161B22),
+    Color(0xFF0E2E1F),
+    Color(0xFF0E4429),
+    Color(0xFF095A2C),
+    Color(0xFF006D32),
+    Color(0xFF13833A),
+    Color(0xFF26A641),
+    Color(0xFF32BF4A),
+    Color(0xFF39D353),
+    Color(0xFF5AE079),
+  ];
 
   @override
   void initState() {
     super.initState();
     _load();
+    _loadTodayEvalColor();
+  }
+
+  @override
+  void didUpdateWidget(covariant ContributionSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _loadTodayEvalColor();
   }
 
   Future<void> _load() async {
@@ -30,6 +52,24 @@ class _ContributionSectionState extends State<ContributionSection> {
     });
   }
 
+  Future<void> _loadTodayEvalColor() async {
+    final DateTime now = DateTime.now();
+    final (int wSec, int rSec) = await DataHelper.loadDailyActual(now);
+    final UserSettings s = await DataHelper.loadUserSettings();
+    final PomodActualResult res = PomodRule.evaluateActualBySeconds(
+      workMin: s.workTime,
+      restMin: s.restTime,
+      totalWorkSeconds: wSec,
+      totalRestSeconds: rSec,
+      referenceCycles: 4,
+    );
+    // 現仕様では当日は固定オレンジで強調するため、実績色は使用しない。
+    // 将来の拡張時に備えて残してある処理。
+    final int _ = (res.actualScore10 - 1).clamp(0, _legendPalette.length - 1);
+    if (!mounted) return;
+    setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
     final DateTime today = DateTime.now();
@@ -40,10 +80,13 @@ class _ContributionSectionState extends State<ContributionSection> {
       (i) => DateTime(today.year, today.month - i, 1),
     );
 
-    // 実データが無い場合はダミーデータで表示
-    final Map<String, int> viewData = (_firstPlayDate == null || _data.isEmpty)
-        ? _buildDummyContributionData(months)
-        : _data;
+    // プレビュー中は常にダミーデータ（全セル着色）を使用。
+    // そうでなければ、実データが無い場合のみダミーデータ。
+    final Map<String, int> viewData = widget.previewLegend
+        ? _buildDummyContributionData(months, includeZero: false)
+        : ((_firstPlayDate == null || _data.isEmpty)
+              ? _buildDummyContributionData(months)
+              : _data);
 
     // 値の最大を求め、レベル分け（0..4）
     final int maxVal = viewData.values.fold<int>(0, (p, e) => math.max(p, e));
@@ -55,6 +98,13 @@ class _ContributionSectionState extends State<ContributionSection> {
       if (r < 0.5) return 2;
       if (r < 0.75) return 3;
       return 4;
+    }
+
+    Color colorFor10(int v) {
+      if (v <= 0 || maxVal <= 0) return _legendPalette[0];
+      final double ratio = (v / maxVal).clamp(0.0, 1.0);
+      final int idx = (ratio * 9).round().clamp(0, _legendPalette.length - 1);
+      return _legendPalette[idx];
     }
 
     Color colorFor(int level) {
@@ -72,6 +122,13 @@ class _ContributionSectionState extends State<ContributionSection> {
       }
     }
 
+    // 起点日の表示ラベル（例: 8/19~）。未設定なら空。
+    String startLabel = '';
+    if (_firstPlayDate != null) {
+      final DateTime d = _firstPlayDate!;
+      startLabel = '${d.month}/${d.day}~';
+    }
+
     return Container(
       color: Colors.black,
       padding: const EdgeInsets.all(16),
@@ -80,13 +137,38 @@ class _ContributionSectionState extends State<ContributionSection> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // 年表示
-          Text(
-            '${today.year}',
-            style: GoogleFonts.roboto(
-              color: Colors.white,
-              fontSize: 24,
-              fontWeight: FontWeight.w500,
-            ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.baseline,
+                textBaseline: TextBaseline.alphabetic,
+                children: [
+                  Text(
+                    '${today.year}',
+                    style: GoogleFonts.roboto(
+                      color: Colors.white,
+                      fontSize: 24,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  if (startLabel.isNotEmpty) ...[
+                    const SizedBox(width: 8),
+                    Text(
+                      startLabel,
+                      style: GoogleFonts.roboto(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+
+              // 右側に10段階の凡例（Less→More）を表示
+              _buildLegend(),
+            ],
           ),
           // 月別カレンダーグリッド（2列配置）。
           // 当月（左上）→1ヶ月前（右）→2ヶ月前（次段左）→3ヶ月前（次段右）…
@@ -110,6 +192,7 @@ class _ContributionSectionState extends State<ContributionSection> {
                           month,
                           levelFor,
                           colorFor,
+                          colorFor10,
                           viewData,
                           cellSize,
                         ),
@@ -130,6 +213,7 @@ class _ContributionSectionState extends State<ContributionSection> {
     DateTime month,
     int Function(int) levelFor,
     Color Function(int) colorFor,
+    Color Function(int) colorFor10,
     Map<String, int> viewData,
     double cellSize,
   ) {
@@ -206,12 +290,34 @@ class _ContributionSectionState extends State<ContributionSection> {
                   final int value = viewData[key] ?? 0;
                   final int level = levelFor(value);
 
+                  final DateTime todayDate = DateTime.now();
+                  final DateTime todayOnly = DateTime(
+                    todayDate.year,
+                    todayDate.month,
+                    todayDate.day,
+                  );
+                  final bool isToday =
+                      date.year == todayOnly.year &&
+                      date.month == todayOnly.month &&
+                      date.day == todayOnly.day;
+                  final bool isFuture = date.isAfter(todayOnly);
+
+                  // 基本色（プレビュー時は10段階、通常は5段階）
+                  final Color baseColor = widget.previewLegend
+                      ? colorFor10(value)
+                      : colorFor(level);
+
+                  // 優先度: Today(オレンジ) > Future(グレー) > 基本色
+                  final Color cellColor = isToday
+                      ? Colors.orangeAccent
+                      : (isFuture ? const Color(0xFF3A3A3A) : baseColor);
+
                   return Container(
                     width: cellSize,
                     height: cellSize,
                     margin: EdgeInsets.only(right: day == 6 ? 0 : gap),
                     decoration: BoxDecoration(
-                      color: colorFor(level),
+                      color: cellColor,
                       borderRadius: BorderRadius.circular(2),
                     ),
                   );
@@ -221,6 +327,41 @@ class _ContributionSectionState extends State<ContributionSection> {
           }),
         ),
       ],
+    );
+  }
+
+  // 10段階の凡例（Less ... More）
+  Widget _buildLegend() {
+    return SizedBox(
+      width: 260,
+      height: 30,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Text(
+            'Less',
+            style: GoogleFonts.roboto(color: Colors.white70, fontSize: 12),
+          ),
+          const SizedBox(width: 8),
+          ..._legendPalette.map(
+            (c) => Container(
+              width: 14,
+              height: 14,
+              margin: const EdgeInsets.symmetric(horizontal: 2),
+              decoration: BoxDecoration(
+                color: c,
+                borderRadius: BorderRadius.circular(3),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            'More',
+            style: GoogleFonts.roboto(color: Colors.white70, fontSize: 12),
+          ),
+        ],
+      ),
     );
   }
 
@@ -275,7 +416,10 @@ class _ContributionSectionState extends State<ContributionSection> {
   }
 
   // ダミーのコントリビューションデータを生成
-  Map<String, int> _buildDummyContributionData(List<DateTime> months) {
+  Map<String, int> _buildDummyContributionData(
+    List<DateTime> months, {
+    bool includeZero = true,
+  }) {
     final Map<String, int> map = <String, int>{};
     // 固定シードで毎回同じ見た目
     final math.Random rng = math.Random(42);
@@ -285,7 +429,11 @@ class _ContributionSectionState extends State<ContributionSection> {
       for (int d = 0; d < lastDay.day; d++) {
         final DateTime date = firstDay.add(Duration(days: d));
         final String key = _dateKey(date);
-        map[key] = rng.nextInt(11); // 0〜10
+        if (includeZero) {
+          map[key] = rng.nextInt(11); // 0〜10
+        } else {
+          map[key] = rng.nextInt(10) + 1; // 1〜10（全セル着色）
+        }
       }
     }
     return map;
