@@ -287,14 +287,19 @@ class _MainPageState extends State<MainPage>
                         child: CupertinoPicker(
                           itemExtent: 32,
                           scrollController: FixedExtentScrollController(
-                            initialItem: (workTime - 1).clamp(
+                            // 5分刻み(5..60)の0始まりインデックス
+                            initialItem: ((workTime - 1) ~/ 5).clamp(
                               0,
-                              59,
-                            ), // 1..60 → 0..59
+                              11,
+                            ), // 0..11
                           ),
                           onSelectedItemChanged: (index) =>
-                              tempWork = index + 1,
-                          children: numberItems(60), // Work: 1..60
+                              tempWork = (index + 1) * 5, // 5,10,..,60
+                          // 5分刻みの表示アイテム
+                          children: List.generate(
+                            12,
+                            (i) => Center(child: Text('${(i + 1) * 5}')),
+                          ), // Work: 5..60 (5分刻み)
                         ),
                       ),
                       Expanded(
@@ -334,7 +339,7 @@ class _MainPageState extends State<MainPage>
     );
     // モーダルが閉じられたので、最新の選択値を反映
     setState(() {
-      workTime = tempWork.clamp(1, 60);
+      workTime = tempWork.clamp(5, 60); // 5..60（5刻み）
       restTime = tempRest.clamp(1, 10);
       resp = tempResp.clamp(1, 10);
     });
@@ -506,54 +511,51 @@ class _MainPageState extends State<MainPage>
             fontWeight: FontWeight.w300,
           ),
         ),
-        toolbarHeight: screenSize.height * .03,
+        toolbarHeight: screenSize.height * .06,
         actions: [
           // タイトルと縦位置がずれないよう微調整（上に数px）
-          Transform.translate(
-            offset: const Offset(0, -6),
-            child: Row(
-              children: [
-                IconButton(
-                  onPressed: () {
-                    setState(() => _previewLegend = !_previewLegend);
-                  },
-                  icon: Icon(
-                    _previewLegend ? Icons.visibility : Icons.visibility_off,
-                    color: Colors.white,
-                  ),
-                  tooltip: 'Legend Preview',
+          Row(
+            children: [
+              IconButton(
+                onPressed: () {
+                  setState(() => _previewLegend = !_previewLegend);
+                },
+                icon: Icon(
+                  _previewLegend ? Icons.visibility : Icons.visibility_off,
+                  color: Colors.white,
                 ),
-                IconButton(
-                  onPressed: () async {
-                    // プリセット選択画面へ遷移し、結果を受け取って反映
-                    final result = await Navigator.of(context)
-                        .push<Map<String, int>>(
-                          MaterialPageRoute(
-                            builder: (_) => const PresetSettingsPage(),
-                          ),
-                        );
-                    if (result != null) {
-                      setState(() {
-                        workTime = result['work'] ?? workTime;
-                        restTime = result['rest'] ?? restTime;
-                        // サイクル数も受け取れたら反映
-                        if (result.containsKey('resp')) {
-                          resp = (result['resp'] ?? resp).clamp(1, 10);
-                        }
-                      });
-                      // 保存して次回起動にも反映
-                      // ignore: discarded_futures
-                      _saveSettings();
-                    }
-                  },
-                  icon: const Icon(
-                    Icons.settings,
-                    color: Colors.white,
-                    size: 26,
-                  ),
+                tooltip: 'Legend Preview',
+              ),
+              IconButton(
+                onPressed: () async {
+                  // プリセット選択画面へ遷移し、結果を受け取って反映
+                  final result = await Navigator.of(context)
+                      .push<Map<String, int>>(
+                        MaterialPageRoute(
+                          builder: (_) => const PresetSettingsPage(),
+                        ),
+                      );
+                  if (result != null) {
+                    setState(() {
+                      workTime = result['work'] ?? workTime;
+                      restTime = result['rest'] ?? restTime;
+                      // サイクル数も受け取れたら反映
+                      if (result.containsKey('resp')) {
+                        resp = (result['resp'] ?? resp).clamp(1, 10);
+                      }
+                    });
+                    // 保存して次回起動にも反映
+                    // ignore: discarded_futures
+                    _saveSettings();
+                  }
+                },
+                icon: Icon(
+                  Icons.manage_search,
+                  color: Colors.white,
+                  size: screenSize.width * .08,
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ],
       ),
@@ -564,7 +566,6 @@ class _MainPageState extends State<MainPage>
             child: Stack(
               children: [
                 Positioned(
-                  top: screenSize.width * .01,
                   left: screenSize.width * .036,
                   child: Opacity(
                     // 実行中のみ1秒ごとの点滅（非実行時は常に表示）
@@ -580,7 +581,7 @@ class _MainPageState extends State<MainPage>
                   ),
                 ),
                 Positioned(
-                  top: screenSize.width * .15,
+                  top: screenSize.width * .14,
                   left: screenSize.width * .036,
                   child: IconButton(
                     onPressed: () {},
@@ -592,7 +593,7 @@ class _MainPageState extends State<MainPage>
                   ),
                 ),
                 Positioned(
-                  top: screenSize.width * .16,
+                  top: screenSize.width * .14,
                   right: screenSize.width * .036,
                   child: SizedBox(
                     width: screenSize.width,

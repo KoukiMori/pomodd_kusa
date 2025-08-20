@@ -75,7 +75,7 @@ class PresetSettingsPage extends StatelessWidget {
         ],
       );
     }).toList();
-
+    final Size screenSize = MediaQuery.of(context).size;
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
@@ -90,6 +90,7 @@ class PresetSettingsPage extends StatelessWidget {
           ),
         ),
         iconTheme: IconThemeData(color: Colors.white),
+        toolbarHeight: screenSize.height * .06,
       ),
       body: Container(
         color: Colors.black,
