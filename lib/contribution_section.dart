@@ -13,20 +13,15 @@ class ContributionSection extends StatefulWidget {
 }
 
 class _ContributionSectionState extends State<ContributionSection> {
-  Map<String, int> _data = <String, int>{};
   DateTime? _firstPlayDate;
   // Color? _todayLegendColor; // 当日の実績に基づく評価色（未使用）
   static const List<Color> _legendPalette = [
-    Color(0xFF161B22),
-    Color(0xFF0E2E1F),
-    Color(0xFF0E4429),
-    Color(0xFF095A2C),
-    Color(0xFF006D32),
-    Color(0xFF13833A),
-    Color(0xFF26A641),
-    Color(0xFF32BF4A),
-    Color(0xFF39D353),
-    Color(0xFF5AE079),
+    Color(0xFF161B22), // 0: 空
+    Color(0xFF0E4429), // 1: 最低
+    Color(0xFF006D32), // 2: 低
+    Color(0xFF26A641), // 3: 中
+    Color(0xFF39D353), // 4: 高
+    Color(0xFF5AE079), // 5: 最高
   ];
 
   @override
@@ -43,29 +38,26 @@ class _ContributionSectionState extends State<ContributionSection> {
   }
 
   Future<void> _load() async {
-    final map = await DataHelper.loadContributionMap();
     final firstPlay = await DataHelper.loadFirstPlayDate();
     if (!mounted) return;
     setState(() {
-      _data = map;
       _firstPlayDate = firstPlay;
     });
   }
 
   Future<void> _loadTodayEvalColor() async {
     final DateTime now = DateTime.now();
-    final (int wSec, int rSec) = await DataHelper.loadDailyActual(now);
-    final UserSettings s = await DataHelper.loadUserSettings();
+    final DailyActualData todayActual = await DataHelper.loadDailyActual(now);
     final PomodActualResult res = PomodRule.evaluateActualBySeconds(
-      workMin: s.workTime,
-      restMin: s.restTime,
-      totalWorkSeconds: wSec,
-      totalRestSeconds: rSec,
-      referenceCycles: 4,
+      workMin: todayActual.workTimeSetting,
+      restMin: todayActual.restTimeSetting,
+      totalWorkSeconds: todayActual.workSec,
+      totalRestSeconds: todayActual.restSec,
+      referenceCycles: todayActual.respSetting,
     );
     // 現仕様では当日は固定オレンジで強調するため、実績色は使用しない。
     // 将来の拡張時に備えて残してある処理。
-    final int _ = (res.actualScore10 - 1).clamp(0, _legendPalette.length - 1);
+    final int _ = (res.actualScore5 - 1).clamp(0, _legendPalette.length - 1);
     if (!mounted) return;
     setState(() {});
   }
@@ -82,45 +74,7 @@ class _ContributionSectionState extends State<ContributionSection> {
 
     // プレビュー中は常にダミーデータ（全セル着色）を使用。
     // そうでなければ、実データが無い場合のみダミーデータ。
-    final Map<String, int> viewData = widget.previewLegend
-        ? _buildDummyContributionData(months, includeZero: false)
-        : ((_firstPlayDate == null || _data.isEmpty)
-              ? _buildDummyContributionData(months)
-              : _data);
-
-    // 値の最大を求め、レベル分け（0..4）
-    final int maxVal = viewData.values.fold<int>(0, (p, e) => math.max(p, e));
-    int levelFor(int v) {
-      if (v <= 0) return 0;
-      if (maxVal <= 0) return 1;
-      final double r = v / maxVal;
-      if (r < 0.25) return 1;
-      if (r < 0.5) return 2;
-      if (r < 0.75) return 3;
-      return 4;
-    }
-
-    Color colorFor10(int v) {
-      if (v <= 0 || maxVal <= 0) return _legendPalette[0];
-      final double ratio = (v / maxVal).clamp(0.0, 1.0);
-      final int idx = (ratio * 9).round().clamp(0, _legendPalette.length - 1);
-      return _legendPalette[idx];
-    }
-
-    Color colorFor(int level) {
-      switch (level) {
-        case 0:
-          return const Color(0xFF161B22); // 空
-        case 1:
-          return const Color(0xFF0E4429);
-        case 2:
-          return const Color(0xFF006D32);
-        case 3:
-          return const Color(0xFF26A641);
-        default:
-          return const Color(0xFF39D353);
-      }
-    }
+    // viewData, levelFor, colorFor, colorFor5 は _buildMonthGrid に集約
 
     // 起点日の表示ラベル（例: 8/19~）。未設定なら空。
     String startLabel = '';
@@ -132,7 +86,6 @@ class _ContributionSectionState extends State<ContributionSection> {
     return Container(
       color: Colors.black,
       padding: const EdgeInsets.all(16),
-      height: 400, // 固定高さを設定してレイアウトエラーを回避
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -188,14 +141,7 @@ class _ContributionSectionState extends State<ContributionSection> {
                           (columnWidth - (6 * dayGap) - 4) / 7;
                       return SizedBox(
                         width: columnWidth,
-                        child: _buildMonthGrid(
-                          month,
-                          levelFor,
-                          colorFor,
-                          colorFor10,
-                          viewData,
-                          cellSize,
-                        ),
+                        child: _buildMonthGrid(month, cellSize),
                       );
                     }).toList(),
                   ),
@@ -209,14 +155,7 @@ class _ContributionSectionState extends State<ContributionSection> {
   }
 
   // 1ヶ月分のカレンダーグリッドを構築
-  Widget _buildMonthGrid(
-    DateTime month,
-    int Function(int) levelFor,
-    Color Function(int) colorFor,
-    Color Function(int) colorFor10,
-    Map<String, int> viewData,
-    double cellSize,
-  ) {
+  Widget _buildMonthGrid(DateTime month, double cellSize) {
     const double gap = 2; // 日セル間の隙間
 
     // 月の最初と最後
@@ -286,10 +225,6 @@ class _ContributionSectionState extends State<ContributionSection> {
                     );
                   }
 
-                  final String key = _dateKey(date);
-                  final int value = viewData[key] ?? 0;
-                  final int level = levelFor(value);
-
                   final DateTime todayDate = DateTime.now();
                   final DateTime todayOnly = DateTime(
                     todayDate.year,
@@ -302,24 +237,48 @@ class _ContributionSectionState extends State<ContributionSection> {
                       date.day == todayOnly.day;
                   final bool isFuture = date.isAfter(todayOnly);
 
-                  // 基本色（プレビュー時は10段階、通常は5段階）
-                  final Color baseColor = widget.previewLegend
-                      ? colorFor10(value)
-                      : colorFor(level);
+                  // FutureBuilderを使って非同期で日別データをロード
+                  return FutureBuilder<DailyActualData>(
+                    future: DataHelper.loadDailyActual(date),
+                    builder: (context, snapshot) {
+                      int score = 0;
+                      if (snapshot.connectionState == ConnectionState.done &&
+                          snapshot.hasData &&
+                          (snapshot.data!.workSec > 0 ||
+                              snapshot.data!.restSec > 0)) {
+                        // 実績がある場合のみ評価を計算
+                        final PomodActualResult res =
+                            PomodRule.evaluateActualBySeconds(
+                              workMin: snapshot.data!.workTimeSetting,
+                              restMin: snapshot.data!.restTimeSetting,
+                              totalWorkSeconds: snapshot.data!.workSec,
+                              totalRestSeconds: snapshot.data!.restSec,
+                              referenceCycles: snapshot.data!.respSetting,
+                            );
+                        score = res.actualScore5; // 達成評価のスコアを使用
+                      }
 
-                  // 優先度: Today(オレンジ) > Future(グレー) > 基本色
-                  final Color cellColor = isToday
-                      ? Colors.orangeAccent
-                      : (isFuture ? const Color(0xFF3A3A3A) : baseColor);
+                      // プレビューモードまたは実績がない場合はダミーデータを生成
+                      final int displayScore = widget.previewLegend
+                          ? _buildDummyDataForDate(date, month)
+                          : score;
 
-                  return Container(
-                    width: cellSize,
-                    height: cellSize,
-                    margin: EdgeInsets.only(right: day == 6 ? 0 : gap),
-                    decoration: BoxDecoration(
-                      color: cellColor,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
+                      final Color baseColor = _legendPalette[displayScore];
+
+                      final Color cellColor = isToday
+                          ? Colors.orangeAccent
+                          : (isFuture ? const Color(0xFF3A3A3A) : baseColor);
+
+                      return Container(
+                        width: cellSize,
+                        height: cellSize,
+                        margin: EdgeInsets.only(right: day == 6 ? 0 : gap),
+                        decoration: BoxDecoration(
+                          color: cellColor,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      );
+                    },
                   );
                 }),
               ),
@@ -330,10 +289,10 @@ class _ContributionSectionState extends State<ContributionSection> {
     );
   }
 
-  // 10段階の凡例（Less ... More）
+  // 5段階の凡例（Less ... More）
   Widget _buildLegend() {
     return SizedBox(
-      width: 260,
+      width: 180,
       height: 30,
       child: Row(
         mainAxisAlignment: MainAxisAlignment.end,
@@ -363,13 +322,6 @@ class _ContributionSectionState extends State<ContributionSection> {
         ],
       ),
     );
-  }
-
-  String _dateKey(DateTime dt) {
-    final DateTime d = DateTime(dt.year, dt.month, dt.day);
-    final String mm = d.month.toString().padLeft(2, '0');
-    final String dd = d.day.toString().padLeft(2, '0');
-    return '${d.year}-$mm-$dd';
   }
 
   // 曜日ヘッダーラベルを取得（日曜始まり、S W S S W S W スタイル）
@@ -416,26 +368,11 @@ class _ContributionSectionState extends State<ContributionSection> {
   }
 
   // ダミーのコントリビューションデータを生成
-  Map<String, int> _buildDummyContributionData(
-    List<DateTime> months, {
-    bool includeZero = true,
-  }) {
-    final Map<String, int> map = <String, int>{};
-    // 固定シードで毎回同じ見た目
-    final math.Random rng = math.Random(42);
-    for (final m in months) {
-      final DateTime firstDay = DateTime(m.year, m.month, 1);
-      final DateTime lastDay = DateTime(m.year, m.month + 1, 0);
-      for (int d = 0; d < lastDay.day; d++) {
-        final DateTime date = firstDay.add(Duration(days: d));
-        final String key = _dateKey(date);
-        if (includeZero) {
-          map[key] = rng.nextInt(11); // 0〜10
-        } else {
-          map[key] = rng.nextInt(10) + 1; // 1〜10（全セル着色）
-        }
-      }
-    }
-    return map;
+  // 月ごとのダミーデータを生成するヘルパー
+  int _buildDummyDataForDate(DateTime date, DateTime month) {
+    // 月と日の組み合わせに基づいて、固定シードでランダムな値を生成
+    final int seed = date.year * 10000 + date.month * 100 + date.day;
+    final math.Random rng = math.Random(seed);
+    return rng.nextInt(6); // 0〜5の範囲でダミーのスコアを返す
   }
 }

@@ -10,8 +10,8 @@ class DataHelper {
   static const String _kRespKey = 'resp_count';
   static const String _kContribMapKey = 'contrib_map'; // 日付→実施回数マップ
   static const String _kFirstPlayDateKey = 'first_play_date'; // 初回プレイ日（起点）
-  static const String _kDailyWorkSecMapKey = 'daily_work_sec_map'; // 日付→合計作業秒
-  static const String _kDailyRestSecMapKey = 'daily_rest_sec_map'; // 日付→合計休憩秒
+  static const String _kDailyActualsKey =
+      'daily_actuals_v2'; // 日付→その日の実績詳細マップ (workSec, restSec, workTimeSetting, restTimeSetting, respSetting)
 
   const DataHelper._();
 
@@ -45,52 +45,61 @@ class DataHelper {
     return '${d.year}-$mm-$dd';
   }
 
-  /// 日別実績: 対象日の作業/休憩秒を読み出す
-  static Future<(int workSec, int restSec)> loadDailyActual(
-    DateTime date,
-  ) async {
+  /// 日別実績: 対象日の作業/休憩秒と設定値を読み出す
+  static Future<DailyActualData> loadDailyActual(DateTime date) async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     final String key = _dateKey(date);
-    final String? wRaw = prefs.getString(_kDailyWorkSecMapKey);
-    final String? rRaw = prefs.getString(_kDailyRestSecMapKey);
-    final Map<String, dynamic> wMap = wRaw == null || wRaw.isEmpty
+    final String? raw = prefs.getString(_kDailyActualsKey);
+    final Map<String, dynamic> dataMap = raw == null || raw.isEmpty
         ? <String, dynamic>{}
-        : (json.decode(wRaw) as Map<String, dynamic>);
-    final Map<String, dynamic> rMap = rRaw == null || rRaw.isEmpty
-        ? <String, dynamic>{}
-        : (json.decode(rRaw) as Map<String, dynamic>);
-    final int w = (wMap[key] as num?)?.toInt() ?? 0;
-    final int r = (rMap[key] as num?)?.toInt() ?? 0;
-    return (w, r);
+        : (json.decode(raw) as Map<String, dynamic>);
+
+    final Map<String, dynamic> dayData =
+        (dataMap[key] as Map<String, dynamic>?) ?? {};
+
+    return DailyActualData(
+      workSec: (dayData['workSec'] as num?)?.toInt() ?? 0,
+      restSec: (dayData['restSec'] as num?)?.toInt() ?? 0,
+      workTimeSetting: (dayData['workTimeSetting'] as num?)?.toInt() ?? 25,
+      restTimeSetting: (dayData['restTimeSetting'] as num?)?.toInt() ?? 5,
+      respSetting: (dayData['respSetting'] as num?)?.toInt() ?? 4,
+    );
   }
 
-  /// 日別実績: 対象日に作業/休憩秒の増分を加算して保存
+  /// 日別実績: 対象日に作業/休憩秒の増分と設定値を加算して保存
   static Future<void> addDailyActual(
     DateTime date, {
     int workSecDelta = 0,
     int restSecDelta = 0,
+    int? workTimeSetting,
+    int? restTimeSetting,
+    int? respSetting,
   }) async {
-    if (workSecDelta == 0 && restSecDelta == 0) return;
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     final String key = _dateKey(date);
 
-    // 作業
-    final String? wRaw = prefs.getString(_kDailyWorkSecMapKey);
-    final Map<String, dynamic> wMap = wRaw == null || wRaw.isEmpty
+    final String? raw = prefs.getString(_kDailyActualsKey);
+    final Map<String, dynamic> dataMap = raw == null || raw.isEmpty
         ? <String, dynamic>{}
-        : (json.decode(wRaw) as Map<String, dynamic>);
-    final int currentW = (wMap[key] as num?)?.toInt() ?? 0;
-    wMap[key] = (currentW + workSecDelta).clamp(0, 86400 * 10);
-    await prefs.setString(_kDailyWorkSecMapKey, json.encode(wMap));
+        : (json.decode(raw) as Map<String, dynamic>);
 
-    // 休憩
-    final String? rRaw = prefs.getString(_kDailyRestSecMapKey);
-    final Map<String, dynamic> rMap = rRaw == null || rRaw.isEmpty
-        ? <String, dynamic>{}
-        : (json.decode(rRaw) as Map<String, dynamic>);
-    final int currentR = (rMap[key] as num?)?.toInt() ?? 0;
-    rMap[key] = (currentR + restSecDelta).clamp(0, 86400 * 10);
-    await prefs.setString(_kDailyRestSecMapKey, json.encode(rMap));
+    final Map<String, dynamic> dayData =
+        (dataMap[key] as Map<String, dynamic>?) ?? {};
+
+    // 既存の値を読み込み、増分を適用
+    final int currentWorkSec = (dayData['workSec'] as num?)?.toInt() ?? 0;
+    final int currentRestSec = (dayData['restSec'] as num?)?.toInt() ?? 0;
+
+    dayData['workSec'] = (currentWorkSec + workSecDelta).clamp(0, 86400 * 10);
+    dayData['restSec'] = (currentRestSec + restSecDelta).clamp(0, 86400 * 10);
+
+    // 設定値はnullでなければ更新
+    if (workTimeSetting != null) dayData['workTimeSetting'] = workTimeSetting;
+    if (restTimeSetting != null) dayData['restTimeSetting'] = restTimeSetting;
+    if (respSetting != null) dayData['respSetting'] = respSetting;
+
+    dataMap[key] = dayData;
+    await prefs.setString(_kDailyActualsKey, json.encode(dataMap));
   }
 
   /// 既存の貢献マップを読み込む（キー: yyyy-MM-dd, 値: 実施回数）
@@ -167,4 +176,21 @@ class UserSettings {
       resp: resp.clamp(1, 10),
     );
   }
+}
+
+/// 日別実績データ構造
+class DailyActualData {
+  final int workSec;
+  final int restSec;
+  final int workTimeSetting;
+  final int restTimeSetting;
+  final int respSetting;
+
+  const DailyActualData({
+    required this.workSec,
+    required this.restSec,
+    required this.workTimeSetting,
+    required this.restTimeSetting,
+    required this.respSetting,
+  });
 }

@@ -180,6 +180,9 @@ class _MainPageState extends State<MainPage>
         DateTime.now(),
         workSecDelta: addWork,
         restSecDelta: addRest,
+        workTimeSetting: workTime,
+        restTimeSetting: restTime,
+        respSetting: resp,
       );
     }
     setState(() {
@@ -410,7 +413,13 @@ class _MainPageState extends State<MainPage>
       _playPhaseChangeSound();
       // 実績に作業分を加算
       // ignore: discarded_futures
-      DataHelper.addDailyActual(DateTime.now(), workSecDelta: workTime * 60);
+      DataHelper.addDailyActual(
+        DateTime.now(),
+        workSecDelta: workTime * 60,
+        workTimeSetting: workTime,
+        restTimeSetting: restTime,
+        respSetting: resp,
+      );
       _isWorkPhase = false;
       _startCurrentPhase();
     } else {
@@ -562,7 +571,7 @@ class _MainPageState extends State<MainPage>
       body: Column(
         children: [
           Expanded(
-            flex: 1,
+            flex: 1, // タイマー部分の比重を適度に制限
             child: Stack(
               children: [
                 Positioned(
@@ -581,8 +590,8 @@ class _MainPageState extends State<MainPage>
                   ),
                 ),
                 Positioned(
-                  top: screenSize.width * .14,
-                  left: screenSize.width * .036,
+                  top: screenSize.width * .12,
+                  left: screenSize.width * .01,
                   child: IconButton(
                     onPressed: () {},
                     icon: Icon(
@@ -593,7 +602,7 @@ class _MainPageState extends State<MainPage>
                   ),
                 ),
                 Positioned(
-                  top: screenSize.width * .14,
+                  top: screenSize.width * .1,
                   right: screenSize.width * .036,
                   child: SizedBox(
                     width: screenSize.width,
@@ -705,7 +714,7 @@ class _MainPageState extends State<MainPage>
                   ),
                 ),
                 Positioned(
-                  top: screenSize.width * .12,
+                  top: screenSize.width * .08,
                   // 10/10 の位置はそのまま、9以下（1桁）の場合は少し左へ寄せる
                   right: screenSize.width * (.12 + (resp < 10 ? -.03 : -.09)),
                   child: GestureDetector(
@@ -744,7 +753,10 @@ class _MainPageState extends State<MainPage>
               ],
             ),
           ),
-          ContributionSection(previewLegend: _previewLegend),
+          Expanded(
+            flex: 1, // コントリビューション部分に適切な比重を設定
+            child: ContributionSection(previewLegend: _previewLegend),
+          ),
         ],
       ),
     );

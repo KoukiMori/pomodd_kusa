@@ -3,7 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:pomodd_kusa/pomod_rule.dart';
 
 // プリセット選択画面
-// - こちらで用意した表（10段階評価）をテーブルで表示
+// - こちらで用意した表（5段階評価）をテーブルで表示
 // - 行をタップすると {work, rest} を返して呼び出し元へ反映させる
 class PresetSettingsPage extends StatelessWidget {
   const PresetSettingsPage({super.key});
@@ -12,21 +12,17 @@ class PresetSettingsPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final rows = PomodRule.presets.map((p) {
       final eval = PomodRule.evaluate(workMin: p.work, restMin: p.rest);
+      // 25分作業 + 5分休憩の行を強調
+      final bool isStandardPomodoro = (p.work == 25 && p.rest == 5);
       return DataRow(
         // 行タップ時に最終確認ダイアログを表示
         onSelectChanged: (_) async {
           await _showConfirmDialog(context: context, preset: p, eval: eval);
         },
+        color: isStandardPomodoro
+            ? WidgetStateProperty.all(Colors.blueGrey.shade800)
+            : null,
         cells: [
-          DataCell(
-            Center(
-              child: Text(
-                '${eval.score10}',
-                textAlign: TextAlign.center,
-                style: GoogleFonts.roboto(color: Colors.white),
-              ),
-            ),
-          ),
           DataCell(
             Center(
               child: Text(
@@ -58,15 +54,6 @@ class PresetSettingsPage extends StatelessWidget {
             Center(
               child: Text(
                 '約${eval.breaksPerHour.toStringAsFixed(1)}回',
-                style: GoogleFonts.roboto(color: Colors.white),
-                textAlign: TextAlign.center,
-              ),
-            ),
-          ),
-          DataCell(
-            Center(
-              child: Text(
-                eval.frequencyLabel,
                 style: GoogleFonts.roboto(color: Colors.white),
                 textAlign: TextAlign.center,
               ),
@@ -109,15 +96,6 @@ class PresetSettingsPage extends StatelessWidget {
                     DataColumn(
                       label: Center(
                         child: Text(
-                          '10段階評価',
-                          style: GoogleFonts.roboto(color: Colors.white70),
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                    ),
-                    DataColumn(
-                      label: Center(
-                        child: Text(
                           '作業時間',
                           style: GoogleFonts.roboto(color: Colors.white70),
                           textAlign: TextAlign.center,
@@ -151,15 +129,6 @@ class PresetSettingsPage extends StatelessWidget {
                         ),
                       ),
                     ),
-                    DataColumn(
-                      label: Center(
-                        child: Text(
-                          '頻度の評価',
-                          style: GoogleFonts.roboto(color: Colors.white70),
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                    ),
                   ],
                   rows: rows,
                   headingRowColor: WidgetStateProperty.all(
@@ -169,6 +138,8 @@ class PresetSettingsPage extends StatelessWidget {
                     const Color(0xFF0A0A0A),
                   ),
                   dividerThickness: 0.4,
+                  headingRowHeight: 48,
+                  columnSpacing: 20,
                 ),
               ),
               const SizedBox(height: 16),
@@ -181,13 +152,21 @@ class PresetSettingsPage extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 8),
-              _bullet('この表の10段階評価は「1時間あたりの休憩回数」を基準に算出しています'),
+              _bullet(
+                'この表は「作業時間と休憩時間のバランス」に基づいています。'
+                '（例：25分作業+5分休憩が「標準」です。）',
+              ),
+              _bullet(
+                '標準の25分作業＋5分休憩は評価3として反映され、それ以外の時間設定は作業と休憩のバランスにより評価が変わります。',
+              ),
               _bullet('計算式: 60 ÷ (作業分 + 休憩分) ≒ 1時間あたりの休憩回数'),
-              _bullet('回数が多いほどスコアは高く色が濃い（例: 約5回→10点、約0.6回→1点）'),
-              _bullet('例1: 10分 + 2分 = 12分 → 約5回/時 → 10点（極端に多い）'),
-              _bullet('例2: 25分 + 5分 = 30分 → 約2回/時 → 5点（標準）'),
-              _bullet('「1サイクル合計」は時間の目安で、評価はサイクル数に依存しません'),
-              _bullet('任意: 実績に基づく重み付け評価（4サイクルを基準に按分）にも対応しています'),
+              _bullet('コントリビューションマップでは達成度合いを「達成評価」としてヒートマップで表示します。'),
+              _bullet(
+                '達成評価は、選択した設定自体の基準評価（内部的に計算されるバランス評価）と、設定した目標サイクル数に対する実際の達成度合い（完了した作業・休憩時間）の組み合わせで決定されます。',
+              ),
+              _bullet(
+                '（例: 設定4サイクルに対し2サイクル完了した場合、達成度は50%となり、その日の「達成評価」に反映されます。）',
+              ),
             ],
           ),
         ),
@@ -218,7 +197,6 @@ class PresetSettingsPage extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _rowText('10段階評価', '${eval.score10}'),
                   _rowText('作業時間', '${preset.work}分'),
                   _rowText('休憩時間', '${preset.rest}分'),
                   _rowText('1サイクル合計', '${eval.cycleMinutes}分'),
@@ -226,7 +204,14 @@ class PresetSettingsPage extends StatelessWidget {
                     '1時間あたりの休憩回数',
                     '約${eval.breaksPerHour.toStringAsFixed(1)}回',
                   ),
-                  _rowText('頻度の評価', eval.frequencyLabel),
+                  const SizedBox(height: 8),
+                  Text(
+                    'コントリビューションマップに達成評価として反映されます。',
+                    style: GoogleFonts.roboto(
+                      color: Colors.white70,
+                      fontSize: 12,
+                    ),
+                  ),
                   const SizedBox(height: 8),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -256,7 +241,10 @@ class PresetSettingsPage extends StatelessWidget {
               actions: [
                 TextButton(
                   onPressed: () => Navigator.of(ctx).pop(false),
-                  child: const Text('キャンセル'),
+                  child: const Text(
+                    'キャンセル',
+                    style: TextStyle(color: Colors.white),
+                  ),
                 ),
                 TextButton(
                   onPressed: () {
@@ -267,7 +255,10 @@ class PresetSettingsPage extends StatelessWidget {
                       'resp': selectedCycles,
                     });
                   },
-                  child: const Text('実行'),
+                  child: const Text(
+                    '実行',
+                    style: TextStyle(color: Colors.deepOrangeAccent),
+                  ),
                 ),
               ],
             );

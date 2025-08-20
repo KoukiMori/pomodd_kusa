@@ -1,5 +1,5 @@
 // ポモドーロ設定の評価ルール
-// 画像の表（作業時間×休憩時間）に基づいて、頻度の評価と10段階評価を返す。
+// 画像の表（作業時間×休憩時間）に基づいて、頻度の評価と5段階評価を返す。
 // UIは変更せず、呼び出し側から
 //   final eval = PomodRule.evaluate(workMin: 25, restMin: 5);
 // のように使う想定。
@@ -10,7 +10,7 @@ class PomodEvaluation {
   final int cycleMinutes; // 1サイクル合計（分）
   final double breaksPerHour; // 1時間あたりの休憩回数（概算）
   final String frequencyLabel; // 頻度の評価
-  final int score10; // 10段階評価（1..10）
+  final int score5; // 5段階評価（1..5）
 
   const PomodEvaluation({
     required this.workMinutes,
@@ -18,7 +18,7 @@ class PomodEvaluation {
     required this.cycleMinutes,
     required this.breaksPerHour,
     required this.frequencyLabel,
-    required this.score10,
+    required this.score5,
   });
 }
 
@@ -31,14 +31,14 @@ class PomodPreset {
 /// 実績評価の結果（基準評価＋実績加味のスコア）
 class PomodActualResult {
   final PomodEvaluation baseline; // 設定ペースに基づく評価（既存表ベース）
-  final int actualScore10; // 実績重み付け後の10段階評価
+  final int actualScore5; // 実績重み付け後の5段階評価
   final double progressWeight; // 進捗重み（0.0〜1.0）
   final int actualTotalMinutes; // 実績の合計分
   final int referenceTotalMinutes; // 基準（例: 4サイクル）合計分
 
   const PomodActualResult({
     required this.baseline,
-    required this.actualScore10,
+    required this.actualScore5,
     required this.progressWeight,
     required this.actualTotalMinutes,
     required this.referenceTotalMinutes,
@@ -76,51 +76,51 @@ class PomodRule {
       case 10:
         switch (restMin) {
           case 2:
-            return _build(workMin, restMin, 12, 5.0, '極端に多い', 10);
+            return _build(workMin, restMin, 12, 5.0, '極端に多い', 5);
         }
         break;
       case 15:
         switch (restMin) {
           case 3:
-            return _build(workMin, restMin, 18, 3.3, 'とても多い', 9);
+            return _build(workMin, restMin, 18, 3.3, 'とても多い', 5);
           case 5:
-            return _build(workMin, restMin, 20, 3.0, 'かなり多い', 8);
+            return _build(workMin, restMin, 20, 3.0, 'かなり多い', 4);
         }
         break;
       case 20:
         switch (restMin) {
           case 3:
-            return _build(workMin, restMin, 23, 2.6, '多め', 7);
+            return _build(workMin, restMin, 23, 2.6, '多め', 4);
           case 5:
-            return _build(workMin, restMin, 25, 2.4, '多い', 6);
+            return _build(workMin, restMin, 25, 2.4, '多い', 3);
         }
         break;
       case 25:
         switch (restMin) {
           case 5:
-            return _build(workMin, restMin, 30, 2.0, '標準', 5);
+            return _build(workMin, restMin, 30, 2.0, '標準', 3);
         }
         break;
       case 30:
         switch (restMin) {
           case 5:
-            return _build(workMin, restMin, 35, 1.7, '標準より少', 4);
+            return _build(workMin, restMin, 35, 1.7, '標準より少', 2);
           case 10:
-            return _build(workMin, restMin, 40, 1.5, '少なめ', 3);
+            return _build(workMin, restMin, 40, 1.5, '少なめ', 2);
         }
         break;
       case 40:
         switch (restMin) {
           case 5:
-            return _build(workMin, restMin, 45, 1.3, '少なめ', 3);
+            return _build(workMin, restMin, 45, 1.3, '少なめ', 2);
           case 10:
-            return _build(workMin, restMin, 50, 1.2, '少ない', 2);
+            return _build(workMin, restMin, 50, 1.2, '少ない', 1);
         }
         break;
       case 50:
         switch (restMin) {
           case 10:
-            return _build(workMin, restMin, 60, 1.0, 'かなり少ない', 2);
+            return _build(workMin, restMin, 60, 1.0, 'かなり少ない', 1);
         }
         break;
       case 60:
@@ -161,7 +161,7 @@ class PomodRule {
       cycleMinutes: cycle,
       breaksPerHour: perHour,
       frequencyLabel: label,
-      score10: score,
+      score5: score,
     );
   }
 
@@ -172,34 +172,19 @@ class PomodRule {
     required int cycle,
     required double perHour,
   }) {
-    // 閾値は表の行に合わせた近似
+    // 閾値は表の行に合わせた近似（5段階）
     String label;
     int score;
-    if (perHour >= 4.5) {
+    if (perHour >= 3.0) {
       label = '極端に多い';
-      score = 10;
-    } else if (perHour >= 3.2) {
-      label = 'とても多い';
-      score = 9;
-    } else if (perHour >= 2.9) {
-      label = 'かなり多い';
-      score = 8;
-    } else if (perHour >= 2.5) {
-      label = '多め';
-      score = 7;
-    } else if (perHour >= 2.3) {
+      score = 5;
+    } else if (perHour >= 2.4) {
       label = '多い';
-      score = 6;
+      score = 4;
     } else if (perHour >= 1.9) {
       label = '標準';
-      score = 5;
-    } else if (perHour >= 1.6) {
-      label = '標準より少';
-      score = 4;
-    } else if (perHour >= 1.35) {
-      label = '少なめ';
       score = 3;
-    } else if (perHour >= 1.05) {
+    } else if (perHour >= 1.3) {
       label = '少ない';
       score = 2;
     } else {
@@ -213,7 +198,7 @@ class PomodRule {
       cycleMinutes: cycle,
       breaksPerHour: perHour,
       frequencyLabel: label,
-      score10: score,
+      score5: score,
     );
   }
 
@@ -234,11 +219,11 @@ class PomodRule {
     final double weight = referenceTotalMin > 0
         ? (actualTotalMin / referenceTotalMin).clamp(0.0, 1.0)
         : 0.0;
-    final int actualScore = (base.score10 * weight).round().clamp(1, 10);
+    final int actualScore = (base.score5 * weight).round().clamp(1, 5);
 
     return PomodActualResult(
       baseline: base,
-      actualScore10: actualScore,
+      actualScore5: actualScore,
       progressWeight: weight,
       actualTotalMinutes: actualTotalMin,
       referenceTotalMinutes: referenceTotalMin,
@@ -268,11 +253,11 @@ class PomodRule {
     final double weight = referenceTotalMin > 0
         ? (actualMin / referenceTotalMin).clamp(0.0, 1.0)
         : 0.0;
-    final int actualScore = (base.score10 * weight).round().clamp(1, 10);
+    final int actualScore = (base.score5 * weight).round().clamp(1, 5);
 
     return PomodActualResult(
       baseline: base,
-      actualScore10: actualScore,
+      actualScore5: actualScore,
       progressWeight: weight,
       actualTotalMinutes: actualMin,
       referenceTotalMinutes: referenceTotalMin,
