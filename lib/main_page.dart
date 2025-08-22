@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:pomodd_kusa/color_style.dart';
 import 'dart:math' as math;
 import 'dart:async';
+import 'dart:io' show Platform; // プラットフォーム判定用
 import 'package:flutter/services.dart';
 import 'package:pomodd_kusa/contribution_section.dart';
 import 'package:pomodd_kusa/data_helper.dart';
@@ -127,11 +128,34 @@ class _MainPageState extends State<MainPage>
     );
   }
 
-  // フェーズ切り替え音（システムのクリック音を再生）
+  // フェーズ切り替え音（iOSの標準通知音とバイブレーション）
   void _playPhaseChangeSound() {
-    // Work/Rest 切り替え時にシステムのアラート音 + 触覚フィードバック
-    SystemSound.play(SystemSoundType.click);
-    HapticFeedback.mediumImpact();
+    if (Platform.isIOS) {
+      SystemSound.play(SystemSoundType.alert);
+      Future.delayed(const Duration(milliseconds: 200), () {
+        SystemSound.play(SystemSoundType.click);
+      });
+    } else {
+      SystemSound.play(SystemSoundType.click);
+      SystemSound.play(SystemSoundType.alert);
+    }
+
+    HapticFeedback.lightImpact();
+    HapticFeedback.selectionClick();
+
+    Future.delayed(const Duration(milliseconds: 100), () {
+      HapticFeedback.mediumImpact();
+    });
+
+    Future.delayed(const Duration(milliseconds: 200), () {
+      HapticFeedback.heavyImpact();
+    });
+
+    if (Platform.isIOS) {
+      Future.delayed(const Duration(milliseconds: 300), () {
+        HapticFeedback.vibrate();
+      });
+    }
   }
 
   // 設定変更の確認ダイアログ（実行中/一時停止中にタップされた場合）
@@ -447,6 +471,9 @@ class _MainPageState extends State<MainPage>
         // 初回セッション完了時に起点日を記録（プレイボタン押下ではなく実際の達成時点）
         _recordFirstPlayIfNeeded();
 
+        // セッション完了時に音とバイブレーションで通知
+        _playPhaseChangeSound();
+
         // ダイアログで完了通知
         _showCompletionDialog();
       }
@@ -535,6 +562,31 @@ class _MainPageState extends State<MainPage>
                 ),
                 tooltip: 'Legend Preview',
               ),
+              // テスト用にWork:1分, Rest:1分, Resp:1を設定するアイコン
+              IconButton(
+                onPressed: () {
+                  // タイマーが実行中または一時停止中の場合は停止してリセット
+                  if (_isRunning || _isPaused) {
+                    _stopAndResetTimer();
+                  }
+                  setState(() {
+                    workTime = 1; // Work Time を1分に設定
+                    restTime = 1; // Rest Time を1分に設定
+                    resp = 1; // Resp（サイクル数）を1に設定
+                    _currentCycle = 0; // サイクルを初期状態にリセット
+                    _isWorkPhase = true; // Workフェーズから開始
+                    _progress = 0.0; // 進捗をリセット
+                  });
+                  // 設定を保存し、次回起動時も反映されるようにする
+                  unawaited(_saveSettings());
+                },
+                icon: Icon(
+                  Icons.bug_report, // テスト用アイコンとして虫のアイコンを使用
+                  color: Colors.lightGreenAccent, // 他のアイコンと区別しやすい色
+                  size: screenSize.width * .08,
+                ),
+                tooltip: 'Set Test Times (1min/1min/1cycle)', // ツールチップで機能説明
+              ),
               IconButton(
                 onPressed: () async {
                   // プリセット選択画面へ遷移し、結果を受け取って反映
@@ -575,7 +627,7 @@ class _MainPageState extends State<MainPage>
             child: Stack(
               children: [
                 Positioned(
-                  left: screenSize.width * .036,
+                  left: screenSize.width * .03,
                   child: Opacity(
                     // 実行中のみ1秒ごとの点滅（非実行時は常に表示）
                     opacity: _isRunning ? (_blinkOn ? 1.0 : 0.1) : 1.0,
@@ -593,7 +645,53 @@ class _MainPageState extends State<MainPage>
                   top: screenSize.width * .12,
                   left: screenSize.width * .01,
                   child: IconButton(
-                    onPressed: () {},
+                    onPressed: () async {
+                      // タイマー実行中または一時停止中のみ停止確認ダイアログを表示
+                      if (_isRunning || _isPaused) {
+                        final bool? shouldStop = await showDialog<bool>(
+                          context: context,
+                          barrierDismissible: true,
+                          builder: (context) {
+                            return AlertDialog(
+                              backgroundColor: Colors.black,
+                              title: Text(
+                                'タイマーを停止しますか？',
+                                style: GoogleFonts.roboto(color: Colors.white),
+                              ),
+                              content: Text(
+                                '現在のタイマーを停止し\nセッションを終了します。\nセッション完了ではないため\nコントリビューションには反映しません。',
+                                style: GoogleFonts.roboto(
+                                  color: Colors.white70,
+                                ),
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () =>
+                                      Navigator.of(context).pop(false),
+                                  child: const Text('いいえ'),
+                                ),
+                                TextButton(
+                                  onPressed: () =>
+                                      Navigator.of(context).pop(true),
+                                  child: const Text('はい'),
+                                ),
+                              ],
+                            );
+                          },
+                        );
+
+                        if (shouldStop == true) {
+                          // 「はい」が選択された場合、タイマーを停止してリセット
+                          _stopAndResetTimer();
+                          // サイクルとフェーズを初期状態に戻す
+                          setState(() {
+                            _currentCycle = 0;
+                            _isWorkPhase = true;
+                            _progress = 0.0;
+                          });
+                        }
+                      }
+                    },
                     icon: Icon(
                       Icons.timer_off_outlined,
                       size: screenSize.width * .1,
@@ -603,7 +701,7 @@ class _MainPageState extends State<MainPage>
                 ),
                 Positioned(
                   top: screenSize.width * .1,
-                  right: screenSize.width * .036,
+                  right: screenSize.width * .02,
                   child: SizedBox(
                     width: screenSize.width,
                     child: _TwoThirdCircularIndicator(

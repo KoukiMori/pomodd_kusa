@@ -1,4 +1,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- バイブレーション機能を使用するための権限 -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+    
     <application
         android:label="pomodd_kusa"
         android:name="${applicationName}"
