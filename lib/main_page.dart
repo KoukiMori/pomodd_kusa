@@ -1,5 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart'; // kDebugMode用
+import 'package:pomodd_kusa/l10n/app_localizations.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:pomodd_kusa/color_style.dart';
 import 'dart:math' as math;
@@ -94,11 +96,11 @@ class _MainPageState extends State<MainPage>
         return AlertDialog(
           backgroundColor: Colors.black,
           title: Text(
-            'セッション完了',
+            AppLocalizations.of(context)!.sessionCompleted,
             style: GoogleFonts.roboto(color: Colors.white),
           ),
           content: Text(
-            'おつかれさまです！全てのサイクルが完了しました。',
+            AppLocalizations.of(context)!.sessionCompletedMessage,
             style: GoogleFonts.roboto(color: Colors.white70),
           ),
           actions: [
@@ -106,7 +108,7 @@ class _MainPageState extends State<MainPage>
               onPressed: () {
                 Navigator.of(context).pop();
               },
-              child: const Text('キャンセル'),
+              child: Text(AppLocalizations.of(context)!.cancel),
             ),
             TextButton(
               onPressed: () {
@@ -120,7 +122,7 @@ class _MainPageState extends State<MainPage>
                 });
                 Navigator.of(context).pop();
               },
-              child: const Text('完了'),
+              child: Text(AppLocalizations.of(context)!.complete),
             ),
           ],
         );
@@ -168,21 +170,21 @@ class _MainPageState extends State<MainPage>
         return AlertDialog(
           backgroundColor: Colors.black,
           title: Text(
-            '設定を変更しますか？',
+            AppLocalizations.of(context)!.changeSettingsConfirmation,
             style: GoogleFonts.roboto(color: Colors.white),
           ),
           content: Text(
-            '変更すると現在のタイマーはリセットされ、新しい設定で開始します。',
+            AppLocalizations.of(context)!.changeSettingsMessage,
             style: GoogleFonts.roboto(color: Colors.white70),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('キャンセル'),
+              child: Text(AppLocalizations.of(context)!.cancel),
             ),
             TextButton(
               onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('変更'),
+              child: Text(AppLocalizations.of(context)!.change),
             ),
           ],
         );
@@ -537,22 +539,9 @@ class _MainPageState extends State<MainPage>
       backgroundColor: Colors.black,
       appBar: AppBar(
         backgroundColor: Colors.black,
-        centerTitle: true, // タイトルを中央に配置
-        leading: SizedBox(width: kToolbarHeight), // 右のactionsとバランスを取り真の中央に揃える
-        title: Text(
-          'PomodGrass',
-          style: GoogleFonts.roboto(
-            fontSize: 32,
-            color: ColorStyle.textColor,
-            fontWeight: FontWeight.w300,
-          ),
-        ),
-        toolbarHeight: screenSize.height * .06,
-        actions: [
-          // タイトルと縦位置がずれないよう微調整（上に数px）
-          Row(
-            children: [
-              IconButton(
+        centerTitle: true, // タイトルを常に中央に配置
+        leading: kDebugMode
+            ? IconButton(
                 onPressed: () {
                   setState(() => _previewLegend = !_previewLegend);
                 },
@@ -561,32 +550,54 @@ class _MainPageState extends State<MainPage>
                   color: Colors.white,
                 ),
                 tooltip: 'Legend Preview',
-              ),
-              // テスト用にWork:1分, Rest:1分, Resp:1を設定するアイコン
-              IconButton(
-                onPressed: () {
-                  // タイマーが実行中または一時停止中の場合は停止してリセット
-                  if (_isRunning || _isPaused) {
-                    _stopAndResetTimer();
-                  }
-                  setState(() {
-                    workTime = 1; // Work Time を1分に設定
-                    restTime = 1; // Rest Time を1分に設定
-                    resp = 1; // Resp（サイクル数）を1に設定
-                    _currentCycle = 0; // サイクルを初期状態にリセット
-                    _isWorkPhase = true; // Workフェーズから開始
-                    _progress = 0.0; // 進捗をリセット
-                  });
-                  // 設定を保存し、次回起動時も反映されるようにする
-                  unawaited(_saveSettings());
-                },
-                icon: Icon(
-                  Icons.bug_report, // テスト用アイコンとして虫のアイコンを使用
-                  color: Colors.lightGreenAccent, // 他のアイコンと区別しやすい色
-                  size: screenSize.width * .08,
+              )
+            : SizedBox(width: kToolbarHeight), // 右のactionsとバランスを取り真の中央に揃える
+        title: Text(
+          AppLocalizations.of(context)!.appTitle,
+          style: Localizations.localeOf(context).languageCode == 'ja'
+              ? GoogleFonts.mPlus1Code(
+                  fontSize: 32,
+                  color: ColorStyle.textColor,
+                  fontWeight: FontWeight.w300,
+                )
+              : GoogleFonts.roboto(
+                  fontSize: 32,
+                  color: ColorStyle.textColor,
+                  fontWeight: FontWeight.w300,
                 ),
-                tooltip: 'Set Test Times (1min/1min/1cycle)', // ツールチップで機能説明
-              ),
+        ),
+        toolbarHeight: screenSize.height * .06,
+        actions: [
+          // タイトルと縦位置がずれないよう微調整（上に数px）
+          Row(
+            children: [
+              // デバッグモードでのみテスト用アイコンを表示（プレビューアイコンはleadingに移動）
+              if (kDebugMode)
+                IconButton(
+                  onPressed: () {
+                    // タイマーが実行中または一時停止中の場合は停止してリセット
+                    if (_isRunning || _isPaused) {
+                      _stopAndResetTimer();
+                    }
+                    setState(() {
+                      workTime = 1; // Work Time を1分に設定
+                      restTime = 1; // Rest Time を1分に設定
+                      resp = 1; // Resp（サイクル数）を1に設定
+                      _currentCycle = 0; // サイクルを初期状態にリセット
+                      _isWorkPhase = true; // Workフェーズから開始
+                      _progress = 0.0; // 進捗をリセット
+                    });
+                    // 設定を保存し、次回起動時も反映されるようにする
+                    unawaited(_saveSettings());
+                  },
+                  icon: Icon(
+                    Icons.bug_report, // テスト用アイコンとして虫のアイコンを使用
+                    color: Colors.lightGreenAccent, // 他のアイコンと区別しやすい色
+                    size: screenSize.width * .08,
+                  ),
+                  tooltip: 'Set Test Times (1min/1min/1cycle)', // ツールチップで機能説明
+                ),
+              // プリセット設定アイコン（リリース版でも使用）
               IconButton(
                 onPressed: () async {
                   // プリセット選択画面へ遷移し、結果を受け取って反映
@@ -655,11 +666,13 @@ class _MainPageState extends State<MainPage>
                             return AlertDialog(
                               backgroundColor: Colors.black,
                               title: Text(
-                                'タイマーを停止しますか？',
+                                AppLocalizations.of(
+                                  context,
+                                )!.timerStopConfirmation,
                                 style: GoogleFonts.roboto(color: Colors.white),
                               ),
                               content: Text(
-                                '現在のタイマーを停止し\nセッションを終了します。\nセッション完了ではないため\nコントリビューションには反映しません。',
+                                AppLocalizations.of(context)!.timerStopMessage,
                                 style: GoogleFonts.roboto(
                                   color: Colors.white70,
                                 ),
@@ -668,12 +681,14 @@ class _MainPageState extends State<MainPage>
                                 TextButton(
                                   onPressed: () =>
                                       Navigator.of(context).pop(false),
-                                  child: const Text('いいえ'),
+                                  child: Text(AppLocalizations.of(context)!.no),
                                 ),
                                 TextButton(
                                   onPressed: () =>
                                       Navigator.of(context).pop(true),
-                                  child: const Text('はい'),
+                                  child: Text(
+                                    AppLocalizations.of(context)!.yes,
+                                  ),
                                 ),
                               ],
                             );
@@ -968,7 +983,7 @@ class _TwoThirdCircularIndicator extends StatelessWidget {
                 gapAngle: gapAngle,
                 rotation: rotation,
                 progressColor: progressColor,
-                backgroundColor: backgroundColor,
+                backgroundColor: ColorStyle.accentColor,
               ),
             ),
             if (center != null) center!,

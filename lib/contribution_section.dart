@@ -66,10 +66,11 @@ class _ContributionSectionState extends State<ContributionSection> {
   Widget build(BuildContext context) {
     final DateTime today = DateTime.now();
 
-    // 表示する月の範囲（今月から過去5ヶ月＝計6ヶ月）
-    final List<DateTime> months = List<DateTime>.generate(
-      6,
-      (i) => DateTime(today.year, today.month - i, 1),
+    // 表示する月の範囲を動的に決定
+    final List<DateTime> months = _getDisplayMonths(
+      today,
+      _firstPlayDate,
+      widget.previewLegend,
     );
 
     // プレビュー中は常にダミーデータ（全セル着色）を使用。
@@ -78,7 +79,11 @@ class _ContributionSectionState extends State<ContributionSection> {
 
     // 起点日の表示ラベル（例: 8/19~）。未設定なら空。
     String startLabel = '';
-    if (_firstPlayDate != null) {
+    if (widget.previewLegend) {
+      // プレビューモード（ダミーデータ表示）時は固定で3月11日を起点とする
+      startLabel = 'Mar/11~';
+    } else if (_firstPlayDate != null) {
+      // 通常モード時は実際の初回プレイ日を起点とする
       final DateTime d = _firstPlayDate!;
       startLabel = '${d.month}/${d.day}~';
     }
@@ -152,6 +157,66 @@ class _ContributionSectionState extends State<ContributionSection> {
         ],
       ),
     );
+  }
+
+  // 表示月の配置を決定するヘルパーメソッド
+  List<DateTime> _getDisplayMonths(
+    DateTime today,
+    DateTime? firstPlayDate,
+    bool isPreview,
+  ) {
+    if (isPreview || firstPlayDate == null) {
+      // プレビューモード時はMar/11を起点とした6ヶ月表示（新しい月から古い月へ）
+      final DateTime dummyStartMonth = DateTime(today.year, 3, 1); // Mar/11の月
+      return List<DateTime>.generate(
+        6,
+        (i) => DateTime(dummyStartMonth.year, dummyStartMonth.month + 5 - i, 1),
+      );
+    } else {
+      // 本番環境では起点月から当月までを表示
+      final DateTime startMonth = DateTime(
+        firstPlayDate.year,
+        firstPlayDate.month,
+        1,
+      );
+      final DateTime currentMonth = DateTime(today.year, today.month, 1);
+
+      // 起点月から当月までの月リストを生成
+      List<DateTime> monthList = [];
+      DateTime month = startMonth;
+
+      while (month.isBefore(currentMonth) ||
+          (month.year == currentMonth.year &&
+              month.month == currentMonth.month)) {
+        monthList.add(month);
+        month = DateTime(month.year, month.month + 1, 1);
+      }
+
+      // 当月を最初に、残りを古い順（起点月→当月-1）で配置
+      List<DateTime> result = [currentMonth];
+      for (DateTime m in monthList.reversed) {
+        if (m.year != currentMonth.year || m.month != currentMonth.month) {
+          result.add(m);
+        }
+      }
+
+      return result;
+    }
+  }
+
+  // データ表示判定メソッド
+  bool _shouldShowRealData(DateTime month, DateTime? firstPlayDate) {
+    if (widget.previewLegend || firstPlayDate == null) {
+      return false; // プレビュー時または起点日未設定時はダミーデータ
+    } else {
+      // 起点月のみ実データを表示
+      final DateTime startMonth = DateTime(
+        firstPlayDate.year,
+        firstPlayDate.month,
+        1,
+      );
+      return month.year == startMonth.year && month.month == startMonth.month;
+    }
   }
 
   // 1ヶ月分のカレンダーグリッドを構築
@@ -258,16 +323,34 @@ class _ContributionSectionState extends State<ContributionSection> {
                         score = res.actualScore5; // 達成評価のスコアを使用
                       }
 
-                      // プレビューモードまたは実績がない場合はダミーデータを生成
-                      final int displayScore = widget.previewLegend
+                      // プレビューモードまたは起点月以外はダミーデータを使用
+                      final bool useRealData = _shouldShowRealData(
+                        month,
+                        _firstPlayDate,
+                      );
+                      final int displayScore =
+                          widget.previewLegend || !useRealData
                           ? _buildDummyDataForDate(date, month)
                           : score;
 
                       final Color baseColor = _legendPalette[displayScore];
 
-                      final Color cellColor = isToday
-                          ? Colors.orangeAccent
-                          : (isFuture ? const Color(0xFF3A3A3A) : baseColor);
+                      // 当日の色判定ロジックを修正
+                      final Color cellColor;
+                      if (isToday) {
+                        // 当日の場合、セッション完了済みかどうかで色を決定
+                        if (useRealData && score > 0) {
+                          // セッション完了済みの場合は判定色を使用
+                          cellColor = baseColor;
+                        } else {
+                          // 未完了またはダミーデータの場合はオレンジ
+                          cellColor = Colors.orangeAccent;
+                        }
+                      } else if (isFuture) {
+                        cellColor = const Color(0xFF3A3A3A);
+                      } else {
+                        cellColor = baseColor;
+                      }
 
                       return Container(
                         width: cellSize,
@@ -370,8 +453,17 @@ class _ContributionSectionState extends State<ContributionSection> {
   // ダミーのコントリビューションデータを生成
   // 月ごとのダミーデータを生成するヘルパー
   int _buildDummyDataForDate(DateTime date, DateTime month) {
-    // 月と日の組み合わせに基づいて、固定シードでランダムな値を生成
-    final int seed = date.year * 10000 + date.month * 100 + date.day;
+    // Mar/11を起点日として、それ以前の日付は評価なし（0）として表示
+    final DateTime dummyStartDate = DateTime(date.year, 3, 11);
+
+    // Mar/11以前の日付は評価なし
+    if (date.isBefore(dummyStartDate)) {
+      return 0; // 空のセルとして表示
+    }
+
+    // Mar/11以降は経過日数を基にした固定シードでランダムな値を生成
+    final int daysDiff = date.difference(dummyStartDate).inDays;
+    final int seed = daysDiff % 10000; // 経過日数を基にしたシード
     final math.Random rng = math.Random(seed);
     return rng.nextInt(6); // 0〜5の範囲でダミーのスコアを返す
   }
