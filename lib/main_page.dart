@@ -1,16 +1,16 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart'; // kDebugMode用
-import 'package:pomodd_kusa/l10n/app_localizations.dart';
+import 'package:pomodgrass/l10n/app_localizations.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:pomodd_kusa/color_style.dart';
+import 'package:pomodgrass/color_style.dart';
 import 'dart:math' as math;
 import 'dart:async';
 import 'dart:io' show Platform; // プラットフォーム判定用
 import 'package:flutter/services.dart';
-import 'package:pomodd_kusa/contribution_section.dart';
-import 'package:pomodd_kusa/data_helper.dart';
-import 'package:pomodd_kusa/preset_settings_page.dart';
+import 'package:pomodgrass/contribution_section.dart';
+import 'package:pomodgrass/data_helper.dart';
+import 'package:pomodgrass/preset_settings_page.dart';
 
 class MainPage extends StatefulWidget {
   const MainPage({super.key});

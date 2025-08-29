@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:pomodd_kusa/l10n/app_localizations.dart';
+import 'package:pomodgrass/l10n/app_localizations.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:pomodd_kusa/pomod_rule.dart';
+import 'package:pomodgrass/pomod_rule.dart';
 
 // プリセット選択画面
 // - こちらで用意した表（5段階評価）をテーブルで表示

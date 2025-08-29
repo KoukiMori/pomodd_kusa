@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:pomodd_kusa/data_helper.dart';
-import 'package:pomodd_kusa/pomod_rule.dart';
+import 'package:pomodgrass/data_helper.dart';
+import 'package:pomodgrass/pomod_rule.dart';
 import 'dart:math' as math;
 import 'package:google_fonts/google_fonts.dart';
 
