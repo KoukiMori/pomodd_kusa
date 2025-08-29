@@ -915,6 +915,8 @@ class _MainPageState extends State<MainPage>
             child: ContributionSection(
               key: ValueKey(_contributionUpdateKey), // キーで強制更新
               previewLegend: _previewLegend,
+              // 当日は完了ダイアログの完了ボタン押下までオレンジを維持
+              forceTodayOrange: _sessionCompletedPendingConfirm,
             ),
           ),
         ],

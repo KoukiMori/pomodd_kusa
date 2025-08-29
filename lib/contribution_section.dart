@@ -7,7 +7,12 @@ import 'package:google_fonts/google_fonts.dart';
 
 class ContributionSection extends StatefulWidget {
   final bool previewLegend; // プレビュー（10段階）を全セルに適用
-  const ContributionSection({super.key, this.previewLegend = false});
+  final bool forceTodayOrange; // 当日は完了確定までオレンジを強制表示する
+  const ContributionSection({
+    super.key,
+    this.previewLegend = false,
+    this.forceTodayOrange = false,
+  });
 
   @override
   State<ContributionSection> createState() => _ContributionSectionState();
@@ -364,12 +369,14 @@ class _ContributionSectionState extends State<ContributionSection> {
                       // 当日の色判定ロジック：完了状況により色を決定
                       final Color cellColor;
                       if (isToday) {
-                        // 当日の場合：完了していれば評価色、未完了ならオレンジ
-                        if (useRealData && score > 0) {
-                          // セッション完了済みの場合は評価に基づく色を使用
+                        // 仕様: 当日は完了確定(完了ボタン押下)まではオレンジを維持
+                        if (widget.forceTodayOrange) {
+                          cellColor = Colors.orangeAccent;
+                        } else if (useRealData && score > 0) {
+                          // 完了確定後は評価色に切り替え
                           cellColor = baseColor;
                         } else {
-                          // 未完了の場合はオレンジで強調表示
+                          // それ以外はオレンジ
                           cellColor = Colors.orangeAccent;
                         }
                       } else if (isFuture) {
