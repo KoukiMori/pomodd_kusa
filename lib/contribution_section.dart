@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart'; // kReleaseMode用
 import 'package:pomodgrass/data_helper.dart';
 import 'package:pomodgrass/pomod_rule.dart';
 import 'dart:math' as math;
@@ -23,6 +24,12 @@ class _ContributionSectionState extends State<ContributionSection> {
     Color(0xFF39D353), // 4: 高
     Color(0xFF5AE079), // 5: 最高
   ];
+
+  // TestFlightでのデバッグ機能制御フラグ（App Store本リリース時は false に変更）
+  static const bool _enableDebugInTestFlight = true;
+
+  // デバッグ機能が有効かどうかを判定
+  bool get _isDebugEnabled => kDebugMode || _enableDebugInTestFlight;
 
   @override
   void initState() {
@@ -55,9 +62,12 @@ class _ContributionSectionState extends State<ContributionSection> {
       totalRestSeconds: todayActual.restSec,
       referenceCycles: todayActual.respSetting,
     );
-    // 現仕様では当日は固定オレンジで強調するため、実績色は使用しない。
-    // 将来の拡張時に備えて残してある処理。
-    final int _ = (res.actualScore5 - 1).clamp(0, _legendPalette.length - 1);
+    // 当日の評価色を取得（完了時に使用）
+    // 完了していない場合はオレンジ、完了済みの場合は評価色を使用
+    final int todayEvalIndex = (res.actualScore5 - 1).clamp(
+      0,
+      _legendPalette.length - 1,
+    );
     if (!mounted) return;
     setState(() {});
   }
@@ -86,6 +96,10 @@ class _ContributionSectionState extends State<ContributionSection> {
       // 通常モード時は実際の初回プレイ日を起点とする
       final DateTime d = _firstPlayDate!;
       startLabel = '${d.month}/${d.day}~';
+    } else {
+      // プレビューOFF（通常時）の場合は本日を起点に表示
+      final DateTime today = DateTime.now();
+      startLabel = '${today.month}/${today.day}~';
     }
 
     return Container(
@@ -165,13 +179,16 @@ class _ContributionSectionState extends State<ContributionSection> {
     DateTime? firstPlayDate,
     bool isPreview,
   ) {
-    if (isPreview || firstPlayDate == null) {
-      // プレビューモード時はMar/11を起点とした6ヶ月表示（新しい月から古い月へ）
+    if (isPreview) {
+      // プレビューON時：Mar/11を起点とした6ヶ月表示（新しい月から古い月へ）
       final DateTime dummyStartMonth = DateTime(today.year, 3, 1); // Mar/11の月
       return List<DateTime>.generate(
         6,
         (i) => DateTime(dummyStartMonth.year, dummyStartMonth.month + 5 - i, 1),
       );
+    } else if (firstPlayDate == null) {
+      // プレビューOFF時で初回プレイ日がない場合：当月のみ表示
+      return [DateTime(today.year, today.month, 1)];
     } else {
       // 本番環境では起点月から当月までを表示
       final DateTime startMonth = DateTime(
@@ -209,13 +226,14 @@ class _ContributionSectionState extends State<ContributionSection> {
     if (widget.previewLegend || firstPlayDate == null) {
       return false; // プレビュー時または起点日未設定時はダミーデータ
     } else {
-      // 起点月のみ実データを表示
+      // 起点月以降は実データを表示
       final DateTime startMonth = DateTime(
         firstPlayDate.year,
         firstPlayDate.month,
         1,
       );
-      return month.year == startMonth.year && month.month == startMonth.month;
+      return month.isAfter(startMonth) ||
+          (month.year == startMonth.year && month.month == startMonth.month);
     }
   }
 
@@ -328,27 +346,37 @@ class _ContributionSectionState extends State<ContributionSection> {
                         month,
                         _firstPlayDate,
                       );
+                      // 起点日より前かどうかをチェック
+                      bool isBeforeStartDate = false;
+                      if (_firstPlayDate != null && !widget.previewLegend) {
+                        isBeforeStartDate = date.isBefore(_firstPlayDate!);
+                      }
+
                       final int displayScore =
                           widget.previewLegend || !useRealData
                           ? _buildDummyDataForDate(date, month)
+                          : isBeforeStartDate
+                          ? 0 // 起点日より前は空（グレー）
                           : score;
 
                       final Color baseColor = _legendPalette[displayScore];
 
-                      // 当日の色判定ロジックを修正
+                      // 当日の色判定ロジック：完了状況により色を決定
                       final Color cellColor;
                       if (isToday) {
-                        // 当日の場合、セッション完了済みかどうかで色を決定
+                        // 当日の場合：完了していれば評価色、未完了ならオレンジ
                         if (useRealData && score > 0) {
-                          // セッション完了済みの場合は判定色を使用
+                          // セッション完了済みの場合は評価に基づく色を使用
                           cellColor = baseColor;
                         } else {
-                          // 未完了またはダミーデータの場合はオレンジ
+                          // 未完了の場合はオレンジで強調表示
                           cellColor = Colors.orangeAccent;
                         }
                       } else if (isFuture) {
+                        // 未来の日付は灰色
                         cellColor = const Color(0xFF3A3A3A);
                       } else {
+                        // 過去の日付は評価に基づく色
                         cellColor = baseColor;
                       }
 

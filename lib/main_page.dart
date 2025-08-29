@@ -21,10 +21,17 @@ class MainPage extends StatefulWidget {
 
 class _MainPageState extends State<MainPage>
     with SingleTickerProviderStateMixin {
+  // TestFlightでのデバッグ機能制御フラグ（App Store本リリース時は false に変更）
+  static const bool _enableDebugInTestFlight = true;
+
+  // デバッグ機能が有効かどうかを判定
+  bool get _isDebugEnabled => kDebugMode || _enableDebugInTestFlight;
+
   // 設定値（状態）
-  int workTime = 25;
-  int restTime = 5;
-  int resp = 5;
+  // デバッグ有効時は時間を短く設定
+  int workTime = 25; // デフォルト値
+  int restTime = 5; // デフォルト値
+  int resp = 5; // デフォルト値
 
   // 設定の保存/読み込み（DataHelper に委譲）
   Future<void> _saveSettings() async {
@@ -34,10 +41,15 @@ class _MainPageState extends State<MainPage>
   }
 
   Future<void> _loadSettings() async {
+    // デバッグ有効時はデフォルト値を短時間に設定
+    final int defaultWork = _isDebugEnabled ? 1 : 25;
+    final int defaultRest = _isDebugEnabled ? 1 : 5;
+    final int defaultResp = _isDebugEnabled ? 2 : 5;
+
     final UserSettings s = await DataHelper.loadUserSettings(
-      defaultWork: workTime,
-      defaultRest: restTime,
-      defaultResp: resp,
+      defaultWork: defaultWork,
+      defaultRest: defaultRest,
+      defaultResp: defaultResp,
     );
     if (!mounted) return;
     setState(() {
@@ -57,6 +69,9 @@ class _MainPageState extends State<MainPage>
   bool _blinkOn = true; // true: 表示, false: 非表示
   bool _isPaused = false; // 一時停止中かどうか
   bool _previewLegend = false; // コントリビューション配色プレビュー
+  bool _hasStartedSession = false; // セッション開始フラグ（一度でもプレイボタンを押したら true）
+  int _contributionUpdateKey = 0; // コントリビューションセクション更新用キー
+  bool _sessionCompletedPendingConfirm = false; // セッション完了後、完了ボタン待ちの状態
 
   // 全体残り割合（全Work+Rest×respを100%として減少）
   int _computeTotalRemainingPercent() {
@@ -106,12 +121,27 @@ class _MainPageState extends State<MainPage>
           actions: [
             TextButton(
               onPressed: () {
+                // キャンセル時は完了確認状態をリセット（データ保存しない）
+                setState(() {
+                  _sessionCompletedPendingConfirm = false;
+                });
                 Navigator.of(context).pop();
               },
               child: Text(AppLocalizations.of(context)!.cancel),
             ),
             TextButton(
               onPressed: () {
+                // 完了ボタン押下時にデータを保存（ここで初めて評価色に反映）
+                if (_sessionCompletedPendingConfirm) {
+                  // 1セッション（Work+Rest）完了を貢献として記録
+                  unawaited(
+                    DataHelper.addContribution(DateTime.now(), delta: 1),
+                  );
+
+                  // 初回セッション完了時に起点日を記録
+                  _recordFirstPlayIfNeeded();
+                }
+
                 // 完了: 状態を初期化
                 setState(() {
                   _isRunning = false;
@@ -119,8 +149,15 @@ class _MainPageState extends State<MainPage>
                   _progress = 0.0;
                   _currentCycle = 0;
                   _isWorkPhase = true;
+                  _hasStartedSession = false; // セッション終了時にフラグリセット
+                  _sessionCompletedPendingConfirm = false; // 完了確認状態をリセット
                 });
                 Navigator.of(context).pop();
+                // 完了ボタン押下時にコントリビューションセクションを更新
+                // 当日のセルが評価色に変わるようにUIを更新
+                setState(() {
+                  _contributionUpdateKey++; // キーを変更して強制的に再構築
+                });
               },
               child: Text(AppLocalizations.of(context)!.complete),
             ),
@@ -465,18 +502,13 @@ class _MainPageState extends State<MainPage>
           _isRunning = false;
           _isPaused = false;
           _progress = 1.0;
+          _sessionCompletedPendingConfirm = true; // 完了ボタン待ち状態に設定
         });
-        // 1セッション（Work+Rest）完了を貢献として記録
-        // ※ ユーザーの毎日の達成回数を GitHub 風に可視化するため
-        unawaited(DataHelper.addContribution(DateTime.now(), delta: 1));
-
-        // 初回セッション完了時に起点日を記録（プレイボタン押下ではなく実際の達成時点）
-        _recordFirstPlayIfNeeded();
 
         // セッション完了時に音とバイブレーションで通知
         _playPhaseChangeSound();
 
-        // ダイアログで完了通知
+        // ダイアログで完了通知（データ保存は完了ボタンで実行）
         _showCompletionDialog();
       }
     }
@@ -515,9 +547,12 @@ class _MainPageState extends State<MainPage>
     }
 
     // 停止中（未開始/完了） → 最初から開始
-    _currentCycle = 0;
-    _isWorkPhase = true;
-    _progress = 0.0;
+    setState(() {
+      _hasStartedSession = true; // セッション開始フラグを立てる
+      _currentCycle = 0;
+      _isWorkPhase = true;
+      _progress = 0.0;
+    });
     _startCurrentPhase();
   }
 
@@ -540,7 +575,8 @@ class _MainPageState extends State<MainPage>
       appBar: AppBar(
         backgroundColor: Colors.black,
         centerTitle: true, // タイトルを常に中央に配置
-        leading: kDebugMode
+        leading:
+            _isDebugEnabled // デバッグ機能有効時にプレビューボタンを表示
             ? IconButton(
                 onPressed: () {
                   setState(() => _previewLegend = !_previewLegend);
@@ -571,8 +607,8 @@ class _MainPageState extends State<MainPage>
           // タイトルと縦位置がずれないよう微調整（上に数px）
           Row(
             children: [
-              // デバッグモードでのみテスト用アイコンを表示（プレビューアイコンはleadingに移動）
-              if (kDebugMode)
+              // デバッグ機能有効時にテスト用アイコンを表示（プレビューアイコンはleadingに移動）
+              if (_isDebugEnabled)
                 IconButton(
                   onPressed: () {
                     // タイマーが実行中または一時停止中の場合は停止してリセット
@@ -652,68 +688,76 @@ class _MainPageState extends State<MainPage>
                     ),
                   ),
                 ),
-                Positioned(
-                  top: screenSize.width * .12,
-                  left: screenSize.width * .01,
-                  child: IconButton(
-                    onPressed: () async {
-                      // タイマー実行中または一時停止中のみ停止確認ダイアログを表示
-                      if (_isRunning || _isPaused) {
-                        final bool? shouldStop = await showDialog<bool>(
-                          context: context,
-                          barrierDismissible: true,
-                          builder: (context) {
-                            return AlertDialog(
-                              backgroundColor: Colors.black,
-                              title: Text(
-                                AppLocalizations.of(
-                                  context,
-                                )!.timerStopConfirmation,
-                                style: GoogleFonts.roboto(color: Colors.white),
-                              ),
-                              content: Text(
-                                AppLocalizations.of(context)!.timerStopMessage,
-                                style: GoogleFonts.roboto(
-                                  color: Colors.white70,
-                                ),
-                              ),
-                              actions: [
-                                TextButton(
-                                  onPressed: () =>
-                                      Navigator.of(context).pop(false),
-                                  child: Text(AppLocalizations.of(context)!.no),
-                                ),
-                                TextButton(
-                                  onPressed: () =>
-                                      Navigator.of(context).pop(true),
-                                  child: Text(
-                                    AppLocalizations.of(context)!.yes,
+                // セッション開始後に停止アイコンを表示
+                if (_hasStartedSession)
+                  Positioned(
+                    top: screenSize.width * .12,
+                    left: screenSize.width * .01,
+                    child: IconButton(
+                      onPressed: () async {
+                        // タイマー実行中または一時停止中のみ停止確認ダイアログを表示
+                        if (_isRunning || _isPaused) {
+                          final bool? shouldStop = await showDialog<bool>(
+                            context: context,
+                            barrierDismissible: true,
+                            builder: (context) {
+                              return AlertDialog(
+                                backgroundColor: Colors.black,
+                                title: Text(
+                                  AppLocalizations.of(
+                                    context,
+                                  )!.timerStopConfirmation,
+                                  style: GoogleFonts.roboto(
+                                    color: Colors.white,
                                   ),
                                 ),
-                              ],
-                            );
-                          },
-                        );
+                                content: Text(
+                                  AppLocalizations.of(
+                                    context,
+                                  )!.timerStopMessage,
+                                  style: GoogleFonts.roboto(
+                                    color: Colors.white70,
+                                  ),
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () =>
+                                        Navigator.of(context).pop(false),
+                                    child: Text(
+                                      AppLocalizations.of(context)!.no,
+                                    ),
+                                  ),
+                                  TextButton(
+                                    onPressed: () =>
+                                        Navigator.of(context).pop(true),
+                                    child: Text(
+                                      AppLocalizations.of(context)!.yes,
+                                    ),
+                                  ),
+                                ],
+                              );
+                            },
+                          );
 
-                        if (shouldStop == true) {
-                          // 「はい」が選択された場合、タイマーを停止してリセット
-                          _stopAndResetTimer();
-                          // サイクルとフェーズを初期状態に戻す
-                          setState(() {
-                            _currentCycle = 0;
-                            _isWorkPhase = true;
-                            _progress = 0.0;
-                          });
+                          if (shouldStop == true) {
+                            // 「はい」が選択された場合、タイマーを停止してリセット
+                            _stopAndResetTimer();
+                            // サイクルとフェーズを初期状態に戻す
+                            setState(() {
+                              _currentCycle = 0;
+                              _isWorkPhase = true;
+                              _progress = 0.0;
+                            });
+                          }
                         }
-                      }
-                    },
-                    icon: Icon(
-                      Icons.timer_off_outlined,
-                      size: screenSize.width * .1,
-                      color: Colors.deepOrangeAccent,
+                      },
+                      icon: Icon(
+                        Icons.timer_off_outlined,
+                        size: screenSize.width * .1,
+                        color: Colors.deepOrangeAccent,
+                      ),
                     ),
                   ),
-                ),
                 Positioned(
                   top: screenSize.width * .1,
                   right: screenSize.width * .02,
@@ -868,7 +912,10 @@ class _MainPageState extends State<MainPage>
           ),
           Expanded(
             flex: 1, // コントリビューション部分に適切な比重を設定
-            child: ContributionSection(previewLegend: _previewLegend),
+            child: ContributionSection(
+              key: ValueKey(_contributionUpdateKey), // キーで強制更新
+              previewLegend: _previewLegend,
+            ),
           ),
         ],
       ),

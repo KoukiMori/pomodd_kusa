@@ -16,7 +16,8 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       home: MainPage(),
       debugShowCheckedModeBanner: false,
-      title: 'PomodGrass',
+      onGenerateTitle: (BuildContext context) =>
+          AppLocalizations.of(context)!.appTitle,
       supportedLocales: const [
         Locale('en'), // English
         Locale('ja'), // Japanese
