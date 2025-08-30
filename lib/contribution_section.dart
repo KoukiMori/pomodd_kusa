@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart'; // kReleaseMode用
 import 'package:pomodgrass/data_helper.dart';
-import 'package:pomodgrass/pomod_rule.dart';
+// import 'package:pomodgrass/pomod_rule.dart'; // total%評価に切り替えたため未使用
 import 'dart:math' as math;
 import 'package:google_fonts/google_fonts.dart';
 
@@ -30,12 +29,6 @@ class _ContributionSectionState extends State<ContributionSection> {
     Color(0xFF5AE079), // 5: 最高
   ];
 
-  // TestFlightでのデバッグ機能制御フラグ（App Store本リリース時は false に変更）
-  static const bool _enableDebugInTestFlight = true;
-
-  // デバッグ機能が有効かどうかを判定
-  bool get _isDebugEnabled => kDebugMode || _enableDebugInTestFlight;
-
   @override
   void initState() {
     super.initState();
@@ -58,21 +51,7 @@ class _ContributionSectionState extends State<ContributionSection> {
   }
 
   Future<void> _loadTodayEvalColor() async {
-    final DateTime now = DateTime.now();
-    final DailyActualData todayActual = await DataHelper.loadDailyActual(now);
-    final PomodActualResult res = PomodRule.evaluateActualBySeconds(
-      workMin: todayActual.workTimeSetting,
-      restMin: todayActual.restTimeSetting,
-      totalWorkSeconds: todayActual.workSec,
-      totalRestSeconds: todayActual.restSec,
-      referenceCycles: todayActual.respSetting,
-    );
-    // 当日の評価色を取得（完了時に使用）
-    // 完了していない場合はオレンジ、完了済みの場合は評価色を使用
-    final int todayEvalIndex = (res.actualScore5 - 1).clamp(
-      0,
-      _legendPalette.length - 1,
-    );
+    // 当日の評価色をロード（UIの更新トリガーとして使用）
     if (!mounted) return;
     setState(() {});
   }
@@ -102,7 +81,7 @@ class _ContributionSectionState extends State<ContributionSection> {
       final DateTime d = _firstPlayDate!;
       startLabel = '${d.month}/${d.day}~';
     } else {
-      // プレビューOFF（通常時）の場合は本日を起点に表示
+      // 起点日未設定時は本日を起点として表示（ただし実際の評価色は表示しない）
       final DateTime today = DateTime.now();
       startLabel = '${today.month}/${today.day}~';
     }
@@ -331,19 +310,30 @@ class _ContributionSectionState extends State<ContributionSection> {
                     builder: (context, snapshot) {
                       int score = 0;
                       if (snapshot.connectionState == ConnectionState.done &&
-                          snapshot.hasData &&
-                          (snapshot.data!.workSec > 0 ||
-                              snapshot.data!.restSec > 0)) {
-                        // 実績がある場合のみ評価を計算
-                        final PomodActualResult res =
-                            PomodRule.evaluateActualBySeconds(
-                              workMin: snapshot.data!.workTimeSetting,
-                              restMin: snapshot.data!.restTimeSetting,
-                              totalWorkSeconds: snapshot.data!.workSec,
-                              totalRestSeconds: snapshot.data!.restSec,
-                              referenceCycles: snapshot.data!.respSetting,
-                            );
-                        score = res.actualScore5; // 達成評価のスコアを使用
+                          snapshot.hasData) {
+                        // total% に基づく5段階評価（0:未達/空, 1..5:達成度）
+                        final d = snapshot.data!;
+                        final int goalSec =
+                            (d.workTimeSetting + d.restTimeSetting) *
+                            60 *
+                            d.respSetting;
+                        if (goalSec > 0) {
+                          final double p = ((d.workSec + d.restSec) / goalSec)
+                              .clamp(0.0, 1.0);
+                          if (p == 0) {
+                            score = 0;
+                          } else if (p < .2) {
+                            score = 1;
+                          } else if (p < .4) {
+                            score = 2;
+                          } else if (p < .6) {
+                            score = 3;
+                          } else if (p < .8) {
+                            score = 4;
+                          } else {
+                            score = 5;
+                          }
+                        }
                       }
 
                       // プレビューモードまたは起点月以外はダミーデータを使用
@@ -353,16 +343,31 @@ class _ContributionSectionState extends State<ContributionSection> {
                       );
                       // 起点日より前かどうかをチェック
                       bool isBeforeStartDate = false;
-                      if (_firstPlayDate != null && !widget.previewLegend) {
-                        isBeforeStartDate = date.isBefore(_firstPlayDate!);
+                      if (!widget.previewLegend) {
+                        if (_firstPlayDate != null) {
+                          // 起点日が設定済みの場合、その日より前は表示しない
+                          isBeforeStartDate = date.isBefore(_firstPlayDate!);
+                        } else {
+                          // 起点日が未設定の場合、すべての日付を起点日より前として扱う
+                          isBeforeStartDate = true;
+                        }
                       }
 
-                      final int displayScore =
-                          widget.previewLegend || !useRealData
-                          ? _buildDummyDataForDate(date, month)
-                          : isBeforeStartDate
-                          ? 0 // 起点日より前は空（グレー）
-                          : score;
+                      // 起点日より前の場合はスコアも0にする（評価色を表示しないため）
+                      final int actualScore = isBeforeStartDate ? 0 : score;
+
+                      // 表示スコアの決定（起点日より前は必ず0にする）
+                      final int displayScore;
+                      if (isBeforeStartDate && !widget.previewLegend) {
+                        // プレビューモードでない場合、起点日より前は必ず0（グレー）
+                        displayScore = 0;
+                      } else if (widget.previewLegend || !useRealData) {
+                        // プレビューモードまたは実データなしの場合はダミーデータ
+                        displayScore = _buildDummyDataForDate(date, month);
+                      } else {
+                        // 実データを使用
+                        displayScore = actualScore;
+                      }
 
                       final Color baseColor = _legendPalette[displayScore];
 
@@ -372,7 +377,7 @@ class _ContributionSectionState extends State<ContributionSection> {
                         // 仕様: 当日は完了確定(完了ボタン押下)まではオレンジを維持
                         if (widget.forceTodayOrange) {
                           cellColor = Colors.orangeAccent;
-                        } else if (useRealData && score > 0) {
+                        } else if (useRealData && actualScore > 0) {
                           // 完了確定後は評価色に切り替え
                           cellColor = baseColor;
                         } else {

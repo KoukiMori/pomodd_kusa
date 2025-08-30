@@ -12,6 +12,7 @@ class DataHelper {
   static const String _kFirstPlayDateKey = 'first_play_date'; // 初回プレイ日（起点）
   static const String _kDailyActualsKey =
       'daily_actuals_v2'; // 日付→その日の実績詳細マップ (workSec, restSec, workTimeSetting, restTimeSetting, respSetting)
+  static const String _kVibrationEnabledKey = 'vibration_enabled'; // バイブON/OFF
 
   const DataHelper._();
 
@@ -35,6 +36,18 @@ class DataHelper {
     final int rest = prefs.getInt(_kRestTimeKey) ?? defaultRest;
     final int rc = prefs.getInt(_kRespKey) ?? defaultResp;
     return UserSettings(workTime: work, restTime: rest, resp: rc).clamped();
+  }
+
+  /// バイブのON/OFFを保存
+  static Future<void> saveVibrationEnabled(bool enabled) async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_kVibrationEnabledKey, enabled);
+  }
+
+  /// バイブのON/OFFを読み込み（未設定時は true）
+  static Future<bool> loadVibrationEnabled({bool defaultValue = true}) async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_kVibrationEnabledKey) ?? defaultValue;
   }
 
   /// yyyy-MM-dd の文字列に正規化（端末ローカル日付で集計）

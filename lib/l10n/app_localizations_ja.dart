@@ -86,26 +86,24 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get evaluationGuide1 =>
-      'この表は「作業時間と休憩時間のバランス」に基づいています。（例：25分作業+5分休憩が「標準」です。）';
+      'この表は時間バランスの参考です。実際のコントリビューション色は、その日の達成率（total%）で決まります。';
 
   @override
   String get evaluationGuide2 =>
-      '標準の25分作業＋5分休憩は評価3として反映され、それ以外の時間設定は作業と休憩のバランスにより評価が変わります。';
+      '達成率 = （作業＋休憩の実績合計秒）÷（目標合計秒）。目標合計秒 = （作業分＋休憩分）×60×サイクル数。';
 
   @override
-  String get evaluationFormula => '計算式: 60 ÷ (作業分 + 休憩分) ≒ 1時間あたりの休憩回数';
+  String get evaluationFormula => '達成率(%) = 実績秒 ÷ 目標秒 × 100';
 
   @override
-  String get contributionMapGuide =>
-      'コントリビューションマップでは達成度合いを「達成評価」としてヒートマップで表示します。';
+  String get contributionMapGuide => 'ヒートマップの色は total% に対応して0〜5段階で表示します（0=空）。';
 
   @override
   String get achievementEvaluationGuide =>
-      '達成評価は、選択した設定自体の基準評価（内部的に計算されるバランス評価）と、設定した目標サイクル数に対する実際の達成度合い（完了した作業・休憩時間）の組み合わせで決定されます。';
+      '5段階の目安: 0%=0, (0,20)%=1, [20,40)%=2, [40,60)%=3, [60,80)%=4, [80,100]%=5。';
 
   @override
-  String get achievementExample =>
-      '（例: 設定4サイクルに対し2サイクル完了した場合、達成度は50%となり、その日の「達成評価」に反映されます。）';
+  String get achievementExample => '例: 4サイクル目標で実績が50%なら、その日の評価は3になります。';
 
   @override
   String get applyPresetConfirmation => 'この設定を適用しますか？';

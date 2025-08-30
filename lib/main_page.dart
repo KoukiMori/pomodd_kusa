@@ -6,8 +6,9 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:pomodgrass/color_style.dart';
 import 'dart:math' as math;
 import 'dart:async';
-import 'dart:io' show Platform; // プラットフォーム判定用
+// import 'dart:io' show Platform; // プラットフォーム判定用（未使用）
 import 'package:flutter/services.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:pomodgrass/contribution_section.dart';
 import 'package:pomodgrass/data_helper.dart';
 import 'package:pomodgrass/preset_settings_page.dart';
@@ -140,6 +141,26 @@ class _MainPageState extends State<MainPage>
 
                   // 初回セッション完了時に起点日を記録
                   _recordFirstPlayIfNeeded();
+
+                  // total%評価: 当日を100%に補完（不足分を加算）
+                  unawaited(() async {
+                    final DateTime now = DateTime.now();
+                    final DailyActualData today =
+                        await DataHelper.loadDailyActual(now);
+                    final int goalSec =
+                        (today.workTimeSetting + today.restTimeSetting) *
+                        60 *
+                        today.respSetting;
+                    final int currentSec = today.workSec + today.restSec;
+                    final int delta = (goalSec - currentSec).clamp(0, goalSec);
+                    if (delta > 0) {
+                      await DataHelper.addDailyActual(
+                        now,
+                        // 作業/休憩どちらに足すかは色評価に影響しないため作業側へ集約
+                        workSecDelta: delta,
+                      );
+                    }
+                  }());
                 }
 
                 // 完了: 状態を初期化
@@ -169,32 +190,40 @@ class _MainPageState extends State<MainPage>
 
   // フェーズ切り替え音（iOSの標準通知音とバイブレーション）
   void _playPhaseChangeSound() {
-    if (Platform.isIOS) {
-      SystemSound.play(SystemSoundType.alert);
-      Future.delayed(const Duration(milliseconds: 200), () {
-        SystemSound.play(SystemSoundType.click);
-      });
-    } else {
-      SystemSound.play(SystemSoundType.click);
-      SystemSound.play(SystemSoundType.alert);
-    }
-
-    HapticFeedback.lightImpact();
-    HapticFeedback.selectionClick();
-
-    Future.delayed(const Duration(milliseconds: 100), () {
-      HapticFeedback.mediumImpact();
-    });
-
-    Future.delayed(const Duration(milliseconds: 200), () {
+    // クリック音は廃止し、強めのバイブ + 通知バナー
+    HapticFeedback.heavyImpact();
+    Future.delayed(const Duration(milliseconds: 120), () {
       HapticFeedback.heavyImpact();
     });
+    Future.delayed(const Duration(milliseconds: 240), () {
+      HapticFeedback.vibrate();
+    });
+    _showPhaseChangeNotification();
+  }
 
-    if (Platform.isIOS) {
-      Future.delayed(const Duration(milliseconds: 300), () {
-        HapticFeedback.vibrate();
-      });
-    }
+  // フェーズ切替を通知バナーで知らせる
+  Future<void> _showPhaseChangeNotification() async {
+    final FlutterLocalNotificationsPlugin plugin =
+        FlutterLocalNotificationsPlugin();
+    const AndroidNotificationDetails androidDetails =
+        AndroidNotificationDetails(
+          'phase_change_channel',
+          'Phase Change',
+          channelDescription: 'Notify when work/rest phase changes',
+          importance: Importance.defaultImportance,
+          priority: Priority.defaultPriority,
+          playSound: false,
+        );
+    const DarwinNotificationDetails iosDetails = DarwinNotificationDetails(
+      presentSound: false,
+    );
+    const NotificationDetails details = NotificationDetails(
+      android: androidDetails,
+      iOS: iosDetails,
+    );
+    final String title = _isWorkPhase ? 'Rest → Work' : 'Work → Rest';
+    final String body = _isWorkPhase ? '作業フェーズを開始します' : '休憩フェーズを開始します';
+    await plugin.show(0, title, body, details);
   }
 
   // 設定変更の確認ダイアログ（実行中/一時停止中にタップされた場合）
@@ -447,6 +476,22 @@ class _MainPageState extends State<MainPage>
     // タイマーの実行処理は _startCurrentPhase() 側で duration を都度設定するため影響なし。
     // ignore: discarded_futures
     _loadSettings();
+
+    // 日付変更(0時)でUI再計算: 次の0時に一度だけ実行し、その後も毎日再スケジュール
+    _scheduleMidnightTick();
+  }
+
+  // 次の0時にsetStateして評価色を再計算
+  void _scheduleMidnightTick() {
+    final DateTime now = DateTime.now();
+    final DateTime nextMidnight = DateTime(now.year, now.month, now.day + 1);
+    final Duration wait = nextMidnight.difference(now);
+    Timer(wait, () {
+      if (!mounted) return;
+      setState(() {});
+      // 連続稼働に備え再スケジュール
+      _scheduleMidnightTick();
+    });
   }
 
   @override
@@ -607,6 +652,7 @@ class _MainPageState extends State<MainPage>
           // タイトルと縦位置がずれないよう微調整（上に数px）
           Row(
             children: [
+              // (vibration toggle removed by request)
               // デバッグ機能有効時にテスト用アイコンを表示（プレビューアイコンはleadingに移動）
               if (_isDebugEnabled)
                 IconButton(

@@ -251,37 +251,37 @@ abstract class AppLocalizations {
   /// No description provided for @evaluationGuide1.
   ///
   /// In en, this message translates to:
-  /// **'This table is based on the balance between work time and break time. (Example: 25 minutes work + 5 minutes break is \"standard\".)'**
+  /// **'This table is a reference for time balance. The contribution color actually uses the day\'s achievement (total%).'**
   String get evaluationGuide1;
 
   /// No description provided for @evaluationGuide2.
   ///
   /// In en, this message translates to:
-  /// **'The standard 25 minutes work + 5 minutes break is reflected as evaluation 3, and other time settings have different evaluations based on the balance between work and break.'**
+  /// **'Achievement% = (work+rest actual seconds) ÷ (daily goal seconds). Goal seconds = (work+rest minutes)×60×cycles.'**
   String get evaluationGuide2;
 
   /// No description provided for @evaluationFormula.
   ///
   /// In en, this message translates to:
-  /// **'Formula: 60 ÷ (work minutes + break minutes) ≈ number of breaks per hour'**
+  /// **'Achievement% = actual seconds ÷ goal seconds × 100'**
   String get evaluationFormula;
 
   /// No description provided for @contributionMapGuide.
   ///
   /// In en, this message translates to:
-  /// **'In the contribution map, the degree of achievement is displayed as a \"achievement evaluation\" in a heat map.'**
+  /// **'The heatmap color maps total% to a 0–5 scale (0=empty).'**
   String get contributionMapGuide;
 
   /// No description provided for @achievementEvaluationGuide.
   ///
   /// In en, this message translates to:
-  /// **'Achievement evaluation is determined by the combination of the standard evaluation of the selected setting itself (balance evaluation calculated internally) and the degree of achievement against the set target cycle count (completed work/rest time).'**
+  /// **'5-level thresholds: 0%=0, (0,20)%=1, [20,40)%=2, [40,60)%=3, [60,80)%=4, [80,100]%=5.'**
   String get achievementEvaluationGuide;
 
   /// No description provided for @achievementExample.
   ///
   /// In en, this message translates to:
-  /// **'(Example: If 2 cycles are completed out of 4 cycles set, the achievement rate is 50%, which is reflected in the \"achievement evaluation\" for that day.)'**
+  /// **'Example: With a 4-cycle goal and 50% actual, the day\'s rating becomes 3.'**
   String get achievementExample;
 
   /// No description provided for @applyPresetConfirmation.

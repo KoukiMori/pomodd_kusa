@@ -1,9 +1,30 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'dart:io' show Platform;
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:pomodgrass/l10n/app_localizations.dart';
 import 'package:pomodgrass/main_page.dart';
 
-void main() {
+void main() async {
+  // 画面の向きをポートレイト（縦）に固定する
+  WidgetsFlutterBinding.ensureInitialized();
+  await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+  // ローカル通知の初期化（モバイルのみ）
+  if (Platform.isAndroid || Platform.isIOS) {
+    const AndroidInitializationSettings androidInit =
+        AndroidInitializationSettings('@mipmap/ic_launcher');
+    const DarwinInitializationSettings iosInit = DarwinInitializationSettings(
+      requestAlertPermission: true,
+      requestBadgePermission: true,
+      requestSoundPermission: false,
+    );
+    const InitializationSettings initSettings = InitializationSettings(
+      android: androidInit,
+      iOS: iosInit,
+    );
+    await FlutterLocalNotificationsPlugin().initialize(initSettings);
+  }
   runApp(const MyApp());
 }
 
